@@ -1,0 +1,11 @@
+# Edub Design — infra (ED_1727)
+
+- URL `https://design.edub.fr` (cert Let's Encrypt, renouvellement certbot auto). User unix **edub**.
+- Clone live `/home/edub/apps/edub-design` (suit `origin/main`, submodules ; `git pull --ff-only && git submodule update --init --recursive`).
+- Ports : portail Edub **3038** (PM2 `edub-design-portal`, pas encore de code → 502), éditeur Rust **3100** loopback (PM2 `edub-design-editor`, `dist/op-host-web-server --serve-web 3100 --host 127.0.0.1`).
+- PM2 : `edub/deploy/ecosystem.config.cjs`, `pm2 save` fait, linger edub actif (`pm2-edub` enabled).
+- nginx : source `edub/deploy/nginx-design.edub.fr.conf` → `/etc/nginx/sites-available/design.edub.fr`. Authelia au niveau serveur (Remote-* posés par nginx), public : `/mcp` (Bearer, vérifié par le portail), manifest/sw.js/icônes. SSE : buffering off, timeouts 3600 s, body 50 Mo.
+- Authelia : règle `design.edub.fr` one_factor pour `group:design` + `group:admin` (configuration.yml, restart requis). Walid (`edub`) est dans `design`. **Donner accès à quelqu'un** : ajouter `design` à ses `groups` dans `/home/ubuntu/apps/edub-auth/config/users.yml` (rechargé à chaud). Ex. Patrick (`tamagofit-team`) : ajouter `- design`. Droits par projet = dans l'app.
+- Postgres : base/rôle `edub_design` ; `EDUB_DESIGN_DATABASE_URL` dans `edub/portal/.env.local` (600). Sauvegardée automatiquement par edub-backup (pg_dump de toutes les bases).
+- Stockage `data/` (gitignoré) : repris par l'auto-découverte d'edub-backup tant qu'il fait < 30 Mo (`STATE_DIR_MAX_MB`) ; au-delà, ajouter une entrée APP_PATHS dans backup.sh.
+- Build : **rustup pour edub** (toolchain 1.94 épinglée par rust-toolchain.toml ; plus simple à redéployer qu'un build ubuntu + livraison d'artefacts). Outils épinglés dans `/home/edub/tools` (binaryen v123, wasm-bindgen-cli 0.2.117). Paquets apt : libssl-dev libfontconfig1-dev libfreetype-dev fonts-noto-cjk clang. Recette : `bash edub/deploy/build.sh` (flock `/tmp/edub-design-build.lock`, nice 19, ionice idle, CARGO_BUILD_JOBS=4) → `dist/` puis `pm2 restart edub-design-editor`. Durée mesurée : binaire ~13 min, bundle wasm + wasm-opt ~30 min sous nice 19 (build à froid ; incrémental bien plus court).
