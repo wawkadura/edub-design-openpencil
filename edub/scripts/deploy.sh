@@ -47,7 +47,10 @@ if [[ $FORCE_RUST == 1 || ! -x dist/op-host-web-server ]] \
   bash edub/deploy/build.sh
   RESTART_EDITOR=1
 fi
-changed '^edub/deploy/ecosystem\.config\.cjs$' && RESTART_EDITOR=1
+# Editor restarted when the ecosystem differs from the one last applied (stamp, gitignored).
+ECO_STAMP="$ROOT/edub/deploy/.ecosystem-applied"
+ECO_SHA="$(sha256sum "$ECO" | cut -d' ' -f1)"
+[[ "$(cat "$ECO_STAMP" 2>/dev/null || true)" == "$ECO_SHA" ]] || RESTART_EDITOR=1
 
 log "portail"
 cd "$ROOT/edub/portal"
@@ -71,6 +74,7 @@ cd "$ROOT"
 if [[ $RESTART_EDITOR == 1 ]]; then
   pm2 delete edub-design-editor >/dev/null 2>&1 || true
   pm2 start "$ECO" --only edub-design-editor
+  echo "$ECO_SHA" > "$ECO_STAMP"
 fi
 pm2 startOrReload "$ECO" --only edub-design-portal --update-env
 
