@@ -15,7 +15,7 @@ use op_editor_core::EditorState;
 
 use crate::layout_scene::LayoutScene;
 use crate::widgets::slides_panel_flow;
-use crate::widgets::{STATUS_BAR_HEIGHT, STATUS_BAR_WIDTH, TOOLBAR_WIDTH, TOP_BAR_HEIGHT};
+use crate::widgets::{STATUS_BAR_HEIGHT, TOOLBAR_WIDTH, TOP_BAR_HEIGHT};
 use crate::{Point2D, Rect};
 
 /// Breathing room between the floating chrome and the canvas edges, so
@@ -155,7 +155,9 @@ pub fn touch_dock_rect(state: &EditorState, viewport_w: f32, viewport_h: f32) ->
 }
 
 pub fn touch_dock_bottom_gap(state: &EditorState) -> f32 {
-    if state.editor_ui.compact_layout() {
+    if state.editor_ui.native_touch_dock {
+        0.0
+    } else if state.editor_ui.compact_layout() {
         MOBILE_DOCK_HEIGHT
     } else {
         TABLET_DOCK_HEIGHT + TABLET_DOCK_BOTTOM_INSET * 2.0
@@ -339,6 +341,53 @@ pub fn canvas_origin(state: &EditorState) -> (f32, f32) {
 /// negative-size rect. While the workspace is docked there is no right
 /// rail, and the presentation family's deck strip reserves the bottom.
 pub fn canvas_region(
+    state: &EditorState,
+    viewport_w: f32,
+    viewport_h: f32,
+) -> (f32, f32, f32, f32) {
+    let (x, y, w, h) = canvas_region_with_timeline(state, viewport_w, viewport_h);
+    (x, y, w, h - motion_timeline_height(state, h))
+}
+
+/// The motion timeline panel, docked along the bottom of the canvas area;
+/// `None` while it is closed or the editor is not showing the canvas.
+/// [`canvas_region`] already leaves this strip out.
+pub fn motion_timeline_rect(state: &EditorState, viewport_w: f32, viewport_h: f32) -> Option<Rect> {
+    let (x, y, w, h) = canvas_region_with_timeline(state, viewport_w, viewport_h);
+    let panel_h = motion_timeline_height(state, h);
+    (panel_h > 0.0).then(|| Rect::xywh(x, y + h - panel_h, w, panel_h))
+}
+
+/// Whether the timeline panel takes its strip: open, in the desktop
+/// editor, not in Preview.
+pub fn motion_timeline_shown(state: &EditorState) -> bool {
+    state.editor_ui.motion_timeline.open && motion_timeline_available(state)
+}
+
+/// Whether the timeline could show here (the StatusBar offers its toggle
+/// only then): the desktop editor, not Preview, the works reader or a
+/// docked workspace.
+pub fn motion_timeline_available(state: &EditorState) -> bool {
+    let ui = &state.editor_ui;
+    !ui.preview.mode && !ui.touch_chrome() && !ui.works_reader_visible() && !workspace_docked(state)
+}
+
+/// The panel's height inside a canvas area `full_h` tall: its own height,
+/// but never more than 60% of the area, so the canvas stays usable.
+fn motion_timeline_height(state: &EditorState, full_h: f32) -> f32 {
+    if !motion_timeline_shown(state) {
+        return 0.0;
+    }
+    state
+        .editor_ui
+        .motion_timeline
+        .height
+        .min(full_h * 0.6)
+        .max(0.0)
+}
+
+/// The canvas area before the timeline panel takes its strip.
+fn canvas_region_with_timeline(
     state: &EditorState,
     viewport_w: f32,
     viewport_h: f32,
@@ -534,16 +583,17 @@ pub fn toolbar_rect_for(state: &EditorState) -> Rect {
 pub fn status_bar_rect(state: &EditorState, viewport_w: f32, viewport_h: f32) -> Option<Rect> {
     let (canvas_left, canvas_top, canvas_w, canvas_h) =
         canvas_region(state, viewport_w, viewport_h);
-    if canvas_w <= STATUS_BAR_WIDTH + STATUS_INSET * 2.0 {
+    let width = crate::widgets::status_bar::status_bar_width(state);
+    if canvas_w <= width + STATUS_INSET * 2.0 {
         return None;
     }
     let canvas_right = canvas_left + canvas_w;
     Some(Rect {
         origin: Point2D::new(
-            canvas_right - STATUS_BAR_WIDTH - STATUS_INSET,
+            canvas_right - width - STATUS_INSET,
             canvas_top + canvas_h - STATUS_BAR_HEIGHT - STATUS_INSET,
         ),
-        size: Point2D::new(STATUS_BAR_WIDTH, STATUS_BAR_HEIGHT),
+        size: Point2D::new(width, STATUS_BAR_HEIGHT),
     })
 }
 
@@ -690,3 +740,7 @@ pub fn path_anchor_hit(
     }
     None
 }
+
+#[cfg(test)]
+#[path = "host_canvas_geometry_timeline_tests.rs"]
+mod timeline_tests;

@@ -97,6 +97,7 @@ mod design_md_press_tests;
 pub(crate) mod icon_ingest;
 #[cfg(all(test, feature = "canvaskit"))]
 mod preview_asset_sync_tests;
+mod preview_effects;
 #[cfg(all(test, feature = "canvaskit"))]
 mod preview_hover_tests;
 // Browser file-IO ingestion (Open / Figma import / clipboard paste)
@@ -144,6 +145,9 @@ mod layer_panel_rename_tests;
 #[cfg(test)]
 mod locale_picker_scroll_tests;
 mod missing_fonts_press;
+#[cfg(all(test, target_arch = "wasm32", feature = "canvaskit"))]
+mod motion_scroll_browser_tests;
+mod motion_timeline_host;
 mod node_drag;
 #[cfg(test)]
 mod node_drag_tests;
@@ -171,8 +175,11 @@ mod press_ctx;
 mod press_overlay_tiers;
 mod press_property_tiers;
 mod press_surface_tiers;
+mod preview_edge_swipe;
 mod preview_frame;
 mod preview_frame_teardown;
+#[cfg(all(test, feature = "canvaskit"))]
+mod preview_frame_tests;
 mod preview_slideshow;
 #[cfg(feature = "canvaskit")]
 mod preview_video;
@@ -211,6 +218,7 @@ pub use studio_home::entry_shows_home;
 mod studio_home_input;
 mod studio_home_send;
 pub use studio_home_send::HomeReplaceIntent;
+mod comments;
 mod studio_home_site_import;
 #[cfg(test)]
 mod studio_home_tests;
@@ -591,7 +599,9 @@ impl WidgetHost {
     /// adjacent state. Every whole-state seam uses this helper so async work
     /// observes one monotonic identity and host caches cannot alias revision 0.
     #[cfg(feature = "canvaskit")]
-    pub(crate) fn replace_editor_state(&mut self, state: op_editor_core::EditorState) {
+    pub(crate) fn replace_editor_state(&mut self, mut state: op_editor_core::EditorState) {
+        state.editor_ui.motion_export.mp4_available =
+            self.editor_state.editor_ui.motion_export.mp4_available;
         self.finish_exit_teardown();
         self.editor_state = state;
         self.editor_state.editor_ui.exit_preview();

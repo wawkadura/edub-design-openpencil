@@ -655,7 +655,7 @@ fn enrich_text(t: &mut TextNode, hints: &HashMap<String, HtmlStyleHint>) {
     }
     if t.font_size.is_none() {
         if let Some(size) = hint.font_size {
-            t.font_size = Some(size);
+            t.font_size = Some(size.into());
         }
     }
     if t.font_weight.is_none() {
@@ -724,6 +724,7 @@ fn build_doc_for_resolve(children: Vec<PenNode>) -> jian_ops_schema::document::P
         design_md: None,
         conversion: None,
         motion: None,
+        comments: None,
         // Figma import never authors the responsive schema opt-in.
         responsive: None,
     }

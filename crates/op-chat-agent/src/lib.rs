@@ -3,7 +3,7 @@
 //! Everything here moved verbatim from `op-host-services` (which re-exports
 //! it all under its original paths) so the mobile FFI hosts run the SAME
 //! design pipeline as desktop — the tool-executing loop with its corrective
-//! budgets, the 15-tool design surface with its per-batch quality feedback,
+//! budgets, the design tool surface with its per-batch quality feedback,
 //! and the loop-end structural finalize plumbing. The move is pure code
 //! motion: module names are unchanged, and the [`chat_builtin_http`] /
 //! [`chat_runtime`] / [`mcp_serve`] alias modules keep the moved files'
@@ -27,6 +27,8 @@ pub mod design_agent_tools;
 pub mod design_context;
 pub mod ip_screen;
 pub mod loop_blocker_ledger;
+mod loop_timing;
+mod prompt_cache;
 pub mod provider_dial;
 pub mod quality_credential;
 pub mod runtime;
@@ -34,7 +36,9 @@ pub mod screen_sets;
 pub mod tool_schemas;
 pub mod workspace_edit;
 
-pub use design_agent_tools::{normalize_mobile_screens, MobileNormalizeReport};
+pub use design_agent_tools::{
+    normalize_mobile_screens, normalize_new_mobile_screens, MobileNormalizeReport,
+};
 
 /// Path-compat alias for `crate::chat_intent::listed_whole_screen_names`
 /// used by `design_agent_tools/root_seed.rs` — only the pure listed-screen

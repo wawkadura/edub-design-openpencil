@@ -85,6 +85,10 @@ impl DesktopApp {
         // And for the deck-slideshow row: same save picker + offscreen
         // exporter. The row still only appears on a deck document.
         host.editor_state_mut().editor_ui.deck_html_export_supported = true;
+        host.editor_state_mut()
+            .editor_ui
+            .motion_export
+            .mp4_available = op_host_services::export::motion::mp4_available();
         // And for the slides tab's board thumbnails: desktop owns the
         // offscreen renderer they are painted with.
         host.editor_state_mut().editor_ui.slide_thumbnails_supported = true;
@@ -204,7 +208,7 @@ impl DesktopApp {
             last_seen_provider_phase: Default::default(),
             hovered_image_drop: false,
             drop_cursor: None,
-            last_saved_pencil_cursor: None,
+            last_saved_ui_prefs: None,
             acp_agent_connect_job: None,
             initial_file,
             app_menu: None,

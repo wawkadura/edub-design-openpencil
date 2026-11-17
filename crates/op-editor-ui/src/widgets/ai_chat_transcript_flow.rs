@@ -15,13 +15,13 @@ use op_editor_core::ChatActivity;
 use crate::Rect;
 
 use super::ai_chat_transcript::{
-    action_step_height, streaming_caret_visible, ActionStep, TextBubble, TranscriptItem,
-    ACTION_STEP_GAP, LINE_H,
+    streaming_caret_visible, ActionStep, TextBubble, TranscriptItem, ACTION_STEP_GAP, LINE_H,
 };
 use super::ai_chat_transcript_design::extract_design_json_blocks;
+use super::ai_chat_transcript_receipts::split_receipts;
 use super::ai_chat_transcript_richtext::{layout_rich, paint_rich, rich_height, rich_line_width};
 use super::ai_chat_transcript_steps::{
-    activity_step, extract_step_blocks, step_state, strip_tool_call_xml,
+    activity_step, extract_step_blocks, step_state, strip_tool_call_xml, wrap_detail,
 };
 use super::ai_chat_transcript_text::wrap_units;
 use super::ai_chat_transcript_tools::{
@@ -93,7 +93,7 @@ pub(crate) fn build_activity_flow(
             let details: Vec<String> = parsed
                 .details
                 .iter()
-                .flat_map(|line| wrap_units(line, budget.saturating_sub(4)))
+                .flat_map(|line| wrap_detail(line, budget))
                 .collect();
             let (done, active, failed) =
                 step_state(&parsed, msg.streaming, index, msg.activities.len());
@@ -103,7 +103,13 @@ pub(crate) fn build_activity_flow(
                 .copied()
                 .flatten()
                 .unwrap_or(active || failed);
-            let height = action_step_height(expanded, details.len());
+            let detail_body =
+                super::ai_chat_transcript_detail_body::detail_body(&parsed.details, budget, failed);
+            let height = super::ai_chat_transcript::step_height(
+                expanded,
+                details.len(),
+                detail_body.as_ref(),
+            );
             // `index` is a direct `msg.activities` index here (unlike the
             // legacy thinking-text-derived steps in `build_item`), so the
             // retry lookup is exact — this is the path a real design-turn
@@ -125,6 +131,7 @@ pub(crate) fn build_activity_flow(
                 active,
                 failed,
                 retryable,
+                detail_body,
             });
             y += height + ACTION_STEP_GAP;
         }
@@ -259,7 +266,8 @@ fn push_prose(
     // Keep byte offsets anchored to the original content, then apply the
     // same presentation filtering as the non-interleaved transcript. The
     // enclosing item already renders extracted steps and design cards.
-    let display = strip_tool_call_xml(raw);
+    // Receipts are laid out as steps after the whole message body.
+    let (display, _) = split_receipts(&strip_tool_call_xml(raw));
     let steps = extract_step_blocks(&display, streaming);
     let design = extract_design_json_blocks(&steps.visible_text, streaming);
     let visible = normalize_narration_markdown(&design.visible_text);

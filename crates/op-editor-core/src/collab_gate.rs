@@ -254,7 +254,12 @@ impl PropertyFocus {
             | P::WidgetMax
             | P::WidgetStep
             | P::VideoSrc
-            | P::GeneratorParam(_) => D::Unsupported(U::UnsupportedNodeProperty),
+            | P::GeneratorParam(_)
+            | P::InteractionParam(..)
+            | P::InteractionTransitionDuration(..)
+            | P::MotionField(..)
+            | P::MotionKeyframeValue(_)
+            | P::TransitionDuration => D::Unsupported(U::UnsupportedNodeProperty),
         }
     }
 }
@@ -436,9 +441,13 @@ impl EditorCommand {
             | C::ReplaceAllMatchingProperties { .. }
             | C::PromoteLegacyWidgets => A::Document(D::Unsupported(U::BulkWrite)),
 
-            C::MergeAppState { .. } | C::SetDesignMd { .. } | C::UpsertScreen { .. } => {
-                A::Document(D::Unsupported(U::RootMetadata))
-            }
+            C::MergeAppState { .. }
+            | C::SetDesignMd { .. }
+            | C::UpsertScreen { .. }
+            | C::Comment(_) => A::Document(D::Unsupported(U::RootMetadata)),
+            // Like interaction parameters, motion is a node field the M1
+            // protocol does not carry yet.
+            C::Motion(_) => A::Document(D::Unsupported(U::UnsupportedNodeProperty)),
             C::UpsertComponent { .. }
             | C::InstantiateComponent { .. }
             | C::CreateComponent { .. }

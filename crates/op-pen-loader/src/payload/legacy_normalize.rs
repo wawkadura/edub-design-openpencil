@@ -8,7 +8,11 @@
 /// asking jian-ops-schema to parse it again used to build two full DOMs for
 /// every canonical document.
 pub(super) fn normalize_legacy_value(value: &mut serde_json::Value) -> bool {
-    let mut changed = super::normalize_video_alias(value);
+    // Native pen.dev documents first: reorder + reshape into `.op` form so
+    // the general repairs below see canonical field names (issue #272).
+    let mut changed = super::pen_dev_compat::is_pen_dev_document(value)
+        && super::pen_dev_compat::convert_pen_dev_document(value);
+    changed |= super::normalize_video_alias(value);
     let repair_legacy_figma_child_order = is_legacy_figma_child_order_candidate(value)
         && auto_layout_order_evidence(value).strongly_indicates_flow_order();
     // Pencil design-kit `.pen` files reference `$--radius-*` number variables
@@ -198,7 +202,8 @@ fn normalize_node_value(
                     let kind = map.get("type").and_then(Value::as_str);
                     let is_image = kind == Some("image");
                     let is_icon = kind == Some("icon");
-                    let is_prompt = kind == Some("prompt");
+                    // pen.dev's `note` is the same kind of annotation card.
+                    let is_prompt = matches!(kind, Some("prompt" | "note"));
                     let is_path = kind == Some("path");
                     let reverse_auto_layout_children = repair_legacy_figma_child_order
                         && kind == Some("frame")
@@ -479,11 +484,10 @@ fn normalize_corner_radius(
         }
     };
     match map.get("cornerRadius") {
-        Some(Value::String(s)) => {
-            let n = number_vars.get(s).copied().unwrap_or(0.0);
-            map.insert("cornerRadius".to_string(), serde_json::json!(n));
-            *changed = true;
-        }
+        // A scalar `$ref` is kept as a link: the schema's
+        // `CornerRadius::Expression` holds it and the canvas resolver
+        // substitutes the value at render time (issue #270).
+        Some(Value::String(_)) => {}
         Some(Value::Array(entries)) => {
             // Only rewrite if at least one entry is a `$ref` string (a plain
             // numeric `[f64; 4]` is already valid; leave it alone).

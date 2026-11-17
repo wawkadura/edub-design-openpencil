@@ -296,6 +296,52 @@ fn device_scroll_divides_by_fit_and_clamps() {
     assert_eq!(host.preview_scroll_y, 0.0);
 }
 
+/// In-view motion follows the device frame's visible window: a row below
+/// the fold waits until the page scrolls it into the frame.
+#[test]
+fn device_scroll_reveals_in_view_motion_below_the_fold() {
+    let _guard = test_lock();
+    let mut host = host_with_doc(load(
+        r##"{
+            "version": "1.1", "formatVersion": "1.1",
+            "children": [{
+                "type": "frame", "id": "screen", "x": 0, "y": 0,
+                "width": 390, "height": 2000,
+                "fill": [{"type":"solid","color":"#ffffff"}],
+                "children": [{
+                    "type": "rectangle", "id": "row", "x": 0, "y": 1500,
+                    "width": 390, "height": 80, "opacity": 1,
+                    "fill": [{"type":"solid","color":"#222222"}],
+                    "animations": [{"trigger":"inView","durationMs":300,"keyframes":[
+                        {"offset":0,"values":{"opacity":0}},
+                        {"offset":1,"values":{"opacity":1}}
+                    ]}]
+                }]
+            }]
+        }"##,
+    ));
+    host.last_viewport_w = 800.0;
+    host.last_viewport_h = 400.0;
+    assert!(host.enter_preview((800.0, 400.0)));
+    host.recompute_device_frame(800.0, 400.0);
+    let session = host.preview.as_mut().unwrap();
+    session.begin_lifecycle(0);
+    let _ = session.preview_scene_for_test();
+    assert_eq!(
+        session.active_animation_track_count(),
+        0,
+        "the row is below the first screen of the frame"
+    );
+    host.apply_device_scroll(-1e6);
+    let session = host.preview.as_ref().unwrap();
+    let _ = session.preview_scene_for_test();
+    assert_eq!(
+        session.active_animation_track_count(),
+        1,
+        "scrolling to the bottom brings the row into the frame"
+    );
+}
+
 /// Page-scroll contract: the device frame's scroll position is mirrored
 /// into the session so `$scroll` under the framed root tracks it.
 #[test]
@@ -533,4 +579,58 @@ fn tab_switch_animates_across_real_frames_through_the_production_paint_path() {
         settled.composite_alphas.is_empty(),
         "the settled opaque fill stack no longer needs an opacity layer"
     );
+}
+
+/// The Preview device / screen switchers float at the canvas top; the
+/// device frame must sit fully below them (and inside the canvas) for
+/// Phone and Desktop, single- and multi-screen, at normal, narrow and
+/// short window sizes — paint, hit-testing and pointer mapping all read
+/// this same frame.
+#[test]
+fn device_frame_sits_below_the_preview_switchers_at_every_size() {
+    use op_editor_ui::widgets::{PreviewDeviceSwitcher, ScreenSwitcherPills};
+    let _guard = test_lock();
+    let sizes = [
+        (1440.0, 900.0),
+        (800.0, 900.0),
+        (560.0, 900.0),
+        (1440.0, 420.0),
+    ];
+    let docs = [
+        ("single", phone_doc(1200)),
+        ("multi", two_screen_tabbed_doc()),
+    ];
+    for (label, doc) in docs {
+        for kind in [PreviewDeviceKind::Phone, PreviewDeviceKind::Desktop] {
+            for (w, h) in sizes {
+                let mut host = host_with_doc(doc.clone());
+                host.last_viewport_w = w;
+                host.last_viewport_h = h;
+                assert!(host.enter_preview((w, h)), "{label} enter");
+                host.set_preview_device(kind, w, h);
+                host.recompute_device_frame(w, h);
+                let (cx, cy, cw, ch) = host.canvas_region(w, h);
+                let canvas = op_editor_ui::Rect::xywh(cx, cy, cw, ch);
+                let frame = host
+                    .preview_device_frame
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{label} {kind:?} {w}x{h}: frame"))
+                    .frame;
+                let mut band = PreviewDeviceSwitcher::pill_rect(canvas);
+                if host.preview.as_ref().unwrap().is_app_mode() {
+                    band = ScreenSwitcherPills::row_rect(canvas, 2);
+                }
+                let band_bottom = band.origin.y + band.size.y;
+                assert!(
+                    frame.origin.y >= band_bottom,
+                    "{label} {kind:?} {w}x{h}: frame top {} under switchers ending at {band_bottom}",
+                    frame.origin.y
+                );
+                assert!(
+                    frame.origin.y + frame.size.y <= cy + ch + 0.5,
+                    "{label} {kind:?} {w}x{h}: frame bottom clipped by the canvas"
+                );
+            }
+        }
+    }
 }

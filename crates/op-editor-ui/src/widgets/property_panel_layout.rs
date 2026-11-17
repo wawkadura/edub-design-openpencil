@@ -22,7 +22,9 @@ use op_editor_core::FillType;
 pub(crate) use crate::widgets::property_panel_visibility::SectionCapabilities;
 pub use crate::widgets::property_panel_visibility::{ComponentButtonState, VisibleSections};
 
-pub use crate::widgets::property_panel_input_layout::editable_input_rects;
+pub use crate::widgets::property_panel_input_layout::{
+    editable_input_rects, editable_input_rects_with_interactions,
+};
 
 pub use crate::widgets::property_panel_effects::{EFFECT_ROW_GAP, EFFECT_ROW_HEIGHT};
 pub const COLOR_VARIABLE_MENU_W: f32 = 210.0;
@@ -193,7 +195,8 @@ pub fn property_panel_content_height(
         false,
         false,
     );
-    let inputs = editable_input_rects(panel_rect, visible, fills, effects);
+    let inputs =
+        editable_input_rects_with_interactions(panel_rect, visible, fills, effects, interactions);
     let bottom = actions
         .iter()
         .map(|(_, r)| r.origin.y + r.size.y)
@@ -518,6 +521,15 @@ pub fn action_button_rects_with_fill_picker(
         y += SECTION_GAP;
     }
     if visible.interactions {
+        // The Motion section sits directly above Interactions.
+        crate::widgets::property_panel_motion::push_motion_action_rects(
+            &mut out,
+            &interactions.motion,
+            x0,
+            y,
+            w,
+        );
+        y += crate::widgets::property_panel_motion::motion_section_height(&interactions.motion);
         push_interaction_action_rects(&mut out, interactions, x0, y, w);
         y += interactions_section_height(interactions);
     }

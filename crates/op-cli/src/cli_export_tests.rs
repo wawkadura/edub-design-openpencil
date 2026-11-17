@@ -27,6 +27,7 @@ fn export_item_maps_to_dedicated_command() {
             output: "/tmp/page.png".into(),
             format: "png".into(),
             scale: Some("2".into()),
+            motion: None,
         }
     );
 }
@@ -301,6 +302,65 @@ fn every_mcp_backed_alias_uses_running_endpoint_discovery() {
         assert!(
             command_needs_server(&parsed.command),
             "MCP-backed alias must discover the running endpoint: {argv:?}"
+        );
+    }
+}
+
+#[test]
+fn motion_export_flags_select_a_manual_clip() {
+    let parsed = parse_args(&args(&[
+        "export",
+        "--item",
+        "hero",
+        "--output",
+        "hero.apng",
+        "--format",
+        "apng",
+        "--clip",
+        "reveal",
+        "--fps",
+        "24",
+        "--duration-ms",
+        "1200",
+    ]))
+    .unwrap();
+    let Command::Export {
+        motion: Some(motion),
+        ..
+    } = parsed.command
+    else {
+        panic!("expected motion export");
+    };
+    assert_eq!(
+        serde_json::Value::Object(motion.arguments()),
+        serde_json::json!({"trigger":"manual","clip":"reveal","fps":24,"durationMs":1200})
+    );
+}
+
+#[test]
+fn motion_export_can_inherit_or_override_the_document_preference() {
+    for (extra, expected) in [
+        (&[][..], None),
+        (&["--reduced-motion"][..], Some(true)),
+        (&["--reduced-motion", "false"][..], Some(false)),
+    ] {
+        let mut argv = args(&[
+            "export", "--item", "hero", "--output", "hero.mp4", "--format", "mp4",
+        ]);
+        argv.extend(args(extra));
+        let Command::Export {
+            motion: Some(motion),
+            ..
+        } = parse_args(&argv).unwrap().command
+        else {
+            panic!("expected motion export");
+        };
+        assert_eq!(
+            motion
+                .arguments()
+                .get("reducedMotion")
+                .and_then(serde_json::Value::as_bool),
+            expected
         );
     }
 }

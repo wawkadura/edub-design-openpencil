@@ -109,6 +109,18 @@ pub(crate) fn paint_action_step(
         );
         cx.backend.save();
         cx.backend.clip_rect(step.rect);
+        if let Some(body) = &step.detail_body {
+            super::ai_chat_transcript_detail_body::paint_detail_body(
+                cx,
+                theme,
+                body,
+                step.rect.origin.x + 12.0,
+                step.rect.origin.y + ACTION_STEP_H + ACTION_DETAIL_GAP,
+                step.rect.size.x - 24.0,
+            );
+            cx.backend.restore();
+            return;
+        }
         let mut baseline = step.rect.origin.y + ACTION_STEP_H + ACTION_DETAIL_GAP + 9.0;
         for line in &step.details {
             draw_line(
@@ -116,7 +128,7 @@ pub(crate) fn paint_action_step(
                 line,
                 step.rect.origin.x + 12.0,
                 baseline,
-                10.0,
+                super::ai_chat_transcript_steps::DETAIL_FONT,
                 theme.muted_foreground,
             );
             baseline += ACTION_DETAIL_LINE_H;

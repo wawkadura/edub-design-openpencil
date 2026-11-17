@@ -26,14 +26,8 @@ impl<'a> CanvasViewport<'a> {
         // The normal-mode workspace recedes behind the work on its own
         // studio backdrop; the professional editor keeps the editor
         // theme's canvas surface unchanged.
-        let fallback = if state.editor_ui.workspace.active {
-            crate::widgets::home_surface::StudioPalette::for_mode(
-                state.editor_ui.effective_theme_mode(),
-            )
-            .canvas
-        } else {
-            theme.canvas_surface
-        };
+        let fallback =
+            crate::widgets::canvas_viewport_background::editor_canvas_surface(state, &theme);
         let (canvas_background, show_grid) =
             crate::widgets::canvas_viewport_background::resolve(state, fallback);
         let viewport = DocViewport {
@@ -114,6 +108,7 @@ impl<'a> CanvasViewport<'a> {
                 .map(|id| id.as_str().to_string()),
             starter_ghost: state.editor_ui.starter_ghost,
             pencil_cursor_style: state.editor_ui.pencil_cursor_style,
+            agent_swarm: state.editor_ui.agent_swarm_enabled,
             pen_cursor_doc: state.ui.pen_cursor_doc.map(|p| Point2D::new(p.x, p.y)),
             pen_dragging_handle: state.ui.pen_dragging_handle,
             active_guides: state.editor_ui.active_guides.clone(),
@@ -191,6 +186,7 @@ impl<'a> CanvasViewport<'a> {
             pen_in_progress: None,
             starter_ghost: None,
             pencil_cursor_style: Default::default(),
+            agent_swarm: false,
             pen_cursor_doc: None,
             pen_dragging_handle: false,
             active_guides: Vec::new(),

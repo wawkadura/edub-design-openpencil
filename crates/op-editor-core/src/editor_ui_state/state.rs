@@ -44,6 +44,8 @@ pub struct EditorUiState {
     /// subprocess CLIs, so their FFI clears this and the chat catalog plus
     /// the settings panel hide every external-CLI surface.
     pub external_cli_available: bool,
+    /// The iOS shell supplies its native tool dock outside the editor viewport.
+    pub native_touch_dock: bool,
     pub mobile_sheet: Option<crate::size_class::MobileSheetKind>,
 
     // --- Theme + locale --------------------------------------------
@@ -144,6 +146,7 @@ pub struct EditorUiState {
     /// cursor-move while the dialog is open.
     pub export_dialog_hover: Option<crate::export_dialog_state::ExportDialogButton>,
     pub export_format: ExportFormat,
+    pub motion_export: crate::motion_export::MotionExportDialogState,
     /// Property-panel Export section: the scale dropdown's inline
     /// select popup is open. Mutually exclusive with
     /// `export_format_picker_open` — opening one closes the other.
@@ -236,6 +239,10 @@ pub struct EditorUiState {
     // --- Canvas preview (Play) mode -------------------------------
     /// Preview (Play) mode flag + device / screen switcher state.
     pub preview: PreviewState,
+    /// Motion timeline panel: scope, tab, playhead, selection, drag draft.
+    pub motion_timeline: super::MotionTimelineState,
+    /// The Motion-section row whose fields are open: `(node id, index)`.
+    pub motion_expanded: Option<(String, usize)>,
     /// Left-rail tab selection plus the slides tab's hover / press /
     /// drag bookkeeping. The tab row itself only appears for scenario
     /// documents that have a page navigator to offer.
@@ -457,6 +464,9 @@ pub struct EditorUiState {
     /// Whether the Interactions section's Navigate/Back/Remove popover
     /// is open. `false` = closed.
     pub interaction_menu_open: bool,
+    /// Which Interactions dropdown is open (`Some` iff
+    /// `interaction_menu_open`).
+    pub interaction_menu_target: Option<crate::interaction_edit_apply::InteractionMenuTarget>,
     /// Row index hovered in the open Interactions popover (`None` =
     /// none).
     pub interaction_menu_hover: Option<usize>,
@@ -697,6 +707,9 @@ pub struct EditorUiState {
     /// Which pencil-cursor silhouette the generation overlay draws.
     /// User-selectable in Settings > System; persisted across launches.
     pub pencil_cursor_style: PencilCursorStyle,
+    /// Cursor swarm: extra named cursors and skeleton placeholders around a
+    /// running generation. Presentation only; off by default.
+    pub agent_swarm_enabled: bool,
     /// Ghost of the blank starter frame `(x, y, w, h)` in doc px. Set when a
     /// design prompt clears the pristine starter; the canvas keeps painting
     /// it until the generated design's sized root lands (or the turn ends),
@@ -775,4 +788,6 @@ pub struct EditorUiState {
     /// A queued component-instantiate request — `(kit_id, comp_id)`, set by a card click,
     /// drained by the desktop host so it can run the instantiate against the viewport's centre.
     pub component_browser_pending_insert: Option<(String, String)>,
+    /// Canvas comment mode, open popover, and its input.
+    pub comments: crate::comment_ui::CommentUiState,
 }

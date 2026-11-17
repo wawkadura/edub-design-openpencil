@@ -120,10 +120,14 @@ pub mod property_panel_instance;
 #[cfg(test)]
 mod property_panel_instance_tests;
 pub mod property_panel_interactions;
+pub mod property_panel_interactions_menu;
 pub mod property_panel_layer;
 pub mod property_panel_layout;
 pub mod property_panel_layout_ops;
 pub(crate) mod property_panel_mode_popover;
+pub mod property_panel_motion;
+pub(crate) mod property_panel_motion_curve;
+pub mod property_panel_motion_menu;
 #[cfg(test)]
 mod property_panel_multi_select_tests;
 mod property_panel_overlay_hit;
@@ -187,6 +191,7 @@ mod canvas_agent_cursor_motion_tests;
 mod canvas_agent_cursor_presence_tests;
 #[cfg(test)]
 mod canvas_agent_cursor_tests;
+mod canvas_agent_swarm;
 mod canvas_collab_presence;
 mod canvas_frame_labels;
 mod canvas_generation_scan;
@@ -195,12 +200,14 @@ mod canvas_generation_scan_tests;
 mod canvas_generator_badge;
 pub mod canvas_layout_transition;
 pub mod canvas_overlay_transform;
+pub mod canvas_paint_scene;
 mod canvas_path_overlay;
 mod canvas_selection_overlay;
 pub mod canvas_text_edit;
 mod canvas_text_kinsoku;
 pub mod canvas_viewport;
 mod canvas_viewport_background;
+pub use canvas_viewport_background::paint_canvas_background_extension;
 mod canvas_viewport_fill_layers;
 mod canvas_viewport_grid;
 // `pub` for the remote-image miss-queue API (`take_remote_image_requests`
@@ -214,6 +221,7 @@ mod canvas_viewport_paint_pop_tests;
 mod canvas_viewport_text;
 pub(crate) mod canvas_viewport_widget;
 pub mod preview_device_switcher;
+pub mod preview_frame_area;
 pub mod scene_paint_options;
 pub mod screen_switcher_pills;
 
@@ -295,6 +303,8 @@ pub mod agent_settings_i18n;
 pub mod agent_settings_images;
 mod agent_settings_images_parts;
 #[cfg(test)]
+mod agent_settings_images_probe_tests;
+#[cfg(test)]
 mod agent_settings_images_profile_tests;
 pub mod agent_settings_mcp;
 mod agent_settings_metrics;
@@ -339,12 +349,15 @@ pub(crate) mod ai_chat_transcript_activity;
 mod ai_chat_transcript_apply_tests;
 pub(crate) mod ai_chat_transcript_cache;
 pub(crate) mod ai_chat_transcript_design;
+pub(crate) mod ai_chat_transcript_detail_body;
+pub(crate) mod ai_chat_transcript_detail_paint;
 pub(crate) mod ai_chat_transcript_flow;
 pub(crate) mod ai_chat_transcript_hit;
 pub(crate) mod ai_chat_transcript_identity;
 #[cfg(test)]
 mod ai_chat_transcript_identity_tests;
 pub(crate) mod ai_chat_transcript_paint_parts;
+pub(crate) mod ai_chat_transcript_receipts;
 pub(crate) mod ai_chat_transcript_richtext;
 pub(crate) mod ai_chat_transcript_selection;
 pub(crate) mod ai_chat_transcript_steps;
@@ -353,6 +366,9 @@ pub(crate) mod ai_chat_transcript_tools;
 mod ai_chat_workspace_copy;
 pub mod align_toolbar;
 pub mod color_picker;
+pub mod comment_flow;
+pub mod comment_pins;
+pub mod comment_popover;
 mod component_browser_kits;
 pub mod component_browser_panel;
 pub mod deck_boards;
@@ -408,6 +424,11 @@ pub mod mobile_chrome;
 #[cfg(test)]
 mod mobile_layout_tests;
 pub mod mobile_more_panel;
+pub mod motion_timeline;
+pub mod motion_timeline_flow;
+pub mod motion_timeline_layout;
+pub mod motion_timeline_paint;
+pub(crate) mod motion_timeline_rows;
 pub mod property_panel_color_variables;
 #[cfg(test)]
 mod property_panel_color_variables_tests;
@@ -464,6 +485,7 @@ pub use canvas_viewport::{
 pub use canvas_viewport_paint::{paint_scene_page, paint_scene_page_without_video_badge};
 pub use canvas_viewport_widget::widget_text_inset_left;
 pub use preview_device_switcher::PreviewDeviceSwitcher;
+pub use preview_frame_area::{canvas_preview_pan, preview_frame_area};
 pub use scene_paint_options::{paint_scene_page_with, paint_scene_subtree, PaintSceneOptions};
 pub use screen_switcher_pills::ScreenSwitcherPills;
 pub use slideshow_toolbar::SlideshowToolbar;
@@ -513,7 +535,7 @@ pub use slides_panel_actions::{
 };
 pub use status_bar::{StatusBar, STATUS_BAR_HEIGHT, STATUS_BAR_WIDTH};
 pub use top_bar::{TopBar, TopBarHit, TOP_BAR_HEIGHT};
-pub use top_bar_window_control::WindowControl;
+pub use top_bar_window_control::{paint_window_control_dots, WindowControl};
 // Re-export panel/toolbar width constants + hit enums so the host
 // can size them consistently and route hits.
 pub use layer_panel::{DropPosition, DropTarget, LayerPanelHit, LAYER_PANEL_WIDTH};

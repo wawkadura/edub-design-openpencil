@@ -8,7 +8,7 @@
 use super::cursor_move_ctx::CursorMoveCtx;
 use super::WidgetHostNative;
 use op_editor_core::codegen::CodeSelection;
-use op_editor_ui::widgets::{AIChatHit, AIChatPlaceholder, PropertyPanel};
+use op_editor_ui::widgets::{motion_timeline_flow, AIChatHit, AIChatPlaceholder, PropertyPanel};
 use op_editor_ui::{Point2D, Rect};
 
 /// Minimum cursor travel (logical px) from the node-drag press point
@@ -31,6 +31,7 @@ impl WidgetHostNative {
         }
         let ui = &self.editor_state.ui;
         self.editor_state.editor_ui.save_name_dialog.open
+            || self.editor_state.editor_ui.comments.owns_keyboard()
             || self.editor_state.editor_ui.collab_join_input_active()
             || ui.layer_rename.is_some()
             || ui.text_editing.is_some()
@@ -597,6 +598,8 @@ impl WidgetHostNative {
         {
             return consumed;
         }
+        // Comment popover button wash — non-consuming, so drags still run.
+        self.hover_comment_popover(x, y);
         // A drag on the phone reader's stage scrolls / swipes the work.
         if let Some(consumed) = self.cursor_move_works_reader(x, y) {
             return consumed;
@@ -651,6 +654,14 @@ impl WidgetHostNative {
         // claim the move (see `cursor_move_panel_resize_tier`).
         if let Some(consumed) = self.cursor_move_panel_resize_tier(x) {
             return consumed;
+        }
+        // Tier 3b — a motion timeline drag holds the pointer until release;
+        // Alt turns snapping off.
+        let (vw, vh) = (self.last_viewport_w, self.last_viewport_h);
+        let snap = !self.alt_held;
+        if motion_timeline_flow::drag(&mut self.editor_state, point, vw, vh, self.now_ms, snap) {
+            self.mark_dirty();
+            return true;
         }
         // Tier 3 — in-flight property / text-selection / crop / node / pen
         // drags. Pointer capture: these own the cursor until release.

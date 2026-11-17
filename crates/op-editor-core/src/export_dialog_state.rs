@@ -16,6 +16,14 @@ use crate::ExportFormat;
 pub enum ExportDialogButton {
     /// A format radio pill (PNG / JPEG / WEBP / SVG / PDF).
     Format(ExportFormat),
+    MotionFormat(crate::motion_export::MotionExportFormat),
+    PreviousClip,
+    NextClip,
+    FrameRate(u32),
+    MotionDuration,
+    RepeatMotion,
+    MotionBackground(crate::motion_export::MotionExportBackground),
+    ReducedMotion,
     /// A scale radio pill (1× / 2× / 3×), as `1 | 2 | 3`.
     Scale(u8),
     /// The Cancel footer button.

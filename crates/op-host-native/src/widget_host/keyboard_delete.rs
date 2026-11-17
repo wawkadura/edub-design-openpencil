@@ -69,6 +69,16 @@ impl WidgetHostNative {
             }
             return true;
         }
+        // The comment popover paints above every panel input (top-most
+        // overlay band), so it owns the keyboard while open.
+        if let Some(changed) =
+            op_editor_core::comment_ui::comment_backspace(&mut self.editor_state, self.now_ms)
+        {
+            if changed {
+                self.mark_dirty();
+            }
+            return true;
+        }
         if self.apply_image_panel_backspace() {
             return true;
         }
@@ -273,6 +283,10 @@ impl WidgetHostNative {
         if self.apply_pen_backspace() {
             return true;
         }
+        // Selected timeline keyframes take Delete before the canvas.
+        if self.delete_motion_keyframes() {
+            return true;
+        }
         if !self.collab_allows_document_mutation(op_editor_core::CollabDocumentMutation::NodeDelete)
         {
             return true;
@@ -318,6 +332,16 @@ impl WidgetHostNative {
         // the editor selection.
         if self.preview.is_some() {
             return self.preview_dispatch_key("Delete", false);
+        }
+        // The comment popover paints above every panel input (top-most
+        // overlay band), so it owns the keyboard while open.
+        if let Some(changed) =
+            op_editor_core::comment_ui::comment_delete_forward(&mut self.editor_state, self.now_ms)
+        {
+            if changed {
+                self.mark_dirty();
+            }
+            return true;
         }
         if self.apply_image_panel_delete() {
             return true;
@@ -419,6 +443,9 @@ impl WidgetHostNative {
         // silently drop the node behind the focused field.
         if shared::delete_owned_by_chrome_input(&self.editor_state) {
             return false;
+        }
+        if self.delete_motion_keyframes() {
+            return true;
         }
         if !self.collab_allows_document_mutation(op_editor_core::CollabDocumentMutation::NodeDelete)
         {

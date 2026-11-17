@@ -130,6 +130,8 @@ pub(super) async fn run_anthropic_agent_loop_inner(
     let mut write_retry = CorrectiveWriteRetry::default();
     let turn_cap = cfg.max_turns.max(1);
     let mut turn = 0usize;
+    let mut timing = crate::loop_timing::LoopTiming::from_env("anthropic");
+    let cache_prompt = crate::prompt_cache::enabled_for(&cfg.url);
     loop {
         // A failed design write gets one model-authored correction request,
         // even when that failure consumed the final ordinary turn. This is a
@@ -203,6 +205,10 @@ pub(super) async fn run_anthropic_agent_loop_inner(
             &cfg.model,
             cfg.disable_thinking,
         );
+        if cache_prompt {
+            crate::prompt_cache::apply(&mut body);
+        }
+        timing.request(&body);
         let client = crate::provider_dial::client_for(cfg.dial_policy, &cfg.url).await?;
         let (max_retries, min_gap) = crate::chat_builtin_http::default_backoff_knobs();
         let resp = crate::chat_builtin_http::send_with_backoff(
@@ -219,6 +225,7 @@ pub(super) async fn run_anthropic_agent_loop_inner(
             },
         )
         .await?;
+        timing.headers();
         let mut collector = AnthropicCollector::default();
         pump_sse(resp, tx, &mut collector).await?;
         if tx.is_closed() {
@@ -231,6 +238,7 @@ pub(super) async fn run_anthropic_agent_loop_inner(
             return Err(BuiltinHttpError::StreamReported(err));
         }
         let calls = collector.tool_calls();
+        timing.response(calls.iter().map(|call| call.name.as_str()));
         if calls.is_empty() {
             if corrective_write_round {
                 let _ = tx
@@ -341,7 +349,14 @@ pub(super) async fn run_anthropic_agent_loop_inner(
                     args: tool_card_envelope(&level, &call.args_json),
                 })
                 .await;
+            let tool_started = std::time::Instant::now();
             let result = execute_tool(&cfg.executor, &call.name, &call.args_json).await;
+            timing.tool(
+                &call.name,
+                tool_started.elapsed(),
+                is_write_level(&level) && !result.is_error,
+                result.is_error,
+            );
             if is_write_level(&level) && !result.is_error {
                 wrote = true;
             }
@@ -369,7 +384,7 @@ pub(super) async fn run_anthropic_agent_loop_inner(
                         elide_inline_screenshots(prior_result);
                     }
                     json!([
-                    { "type": "text", "text": "Rendered screenshot of the current design:" },
+                    { "type": "text", "text": crate::chat_agent_context::image_observation_caption(&call.name, &result) },
                     {
                         "type": "image",
                         "source": {

@@ -122,6 +122,24 @@ pub fn property_focus_initial(focus: PropertyFocus, panel: &PropertyPanel) -> St
         F::GeneratorParam(index) => {
             crate::widgets::property_panel_generator::param_initial(&panel.snapshot, index)
         }
+        F::MotionField(..) | F::TransitionDuration | F::MotionKeyframeValue(_) => {
+            crate::widgets::property_panel_motion::field_initial(
+                focus,
+                &panel.snapshot.interactions.motion,
+            )
+        }
+        F::InteractionParam(trigger, index) => panel
+            .snapshot
+            .interactions
+            .param(trigger, index)
+            .unwrap_or_default()
+            .to_string(),
+        F::InteractionTransitionDuration(trigger, index) => panel
+            .snapshot
+            .interactions
+            .action(trigger, index)
+            .map(super::property_panel_interactions::transition_duration)
+            .unwrap_or_default(),
         F::VideoSrc => panel
             .snapshot
             .video
@@ -392,6 +410,36 @@ pub fn commit_property_focus(state: &mut EditorState) -> bool {
         }
         PropertyFocus::VideoSrc => {
             let _ = state.set_selected_video_src(draft.trim());
+        }
+        PropertyFocus::MotionField(..)
+        | PropertyFocus::TransitionDuration
+        | PropertyFocus::MotionKeyframeValue(_) => {
+            let mut summary = state
+                .selected_node()
+                .map(op_editor_core::motion_summary::MotionSummary::of)
+                .unwrap_or_default();
+            state.fill_motion_summary(&mut summary);
+            crate::widgets::property_panel_motion::commit_field(state, &summary, focus, &draft);
+        }
+        PropertyFocus::InteractionParam(trigger, index) => {
+            let _ = state.apply_selected_interaction_edit_untracked(
+                &op_editor_core::interaction_edit_apply::InteractionEdit::SetActionParam {
+                    trigger,
+                    index,
+                    value: draft.to_string(),
+                },
+            );
+        }
+        PropertyFocus::InteractionTransitionDuration(trigger, index) => {
+            use op_editor_core::interaction_edit_apply::{InteractionEdit, InteractionOption};
+            let _ = state.apply_selected_interaction_edit_untracked(
+                &InteractionEdit::SetActionOption {
+                    trigger,
+                    index,
+                    option: InteractionOption::TransitionDuration,
+                    value: draft.to_string(),
+                },
+            );
         }
         PropertyFocus::GeneratorParam(index) => {
             crate::widgets::property_panel_generator::commit_param(state, index, &draft);

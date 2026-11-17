@@ -178,6 +178,34 @@ pub fn resolve_color_ref(color: &str, vars: Option<&Vars>, theme: &Theme) -> Opt
     }
 }
 
+/// Resolve a `fontFamily` that may be a string `$ref`; non-refs pass
+/// through unchanged. An unresolvable ref yields `None` so callers can
+/// fall back to the default family instead of asking for a font named
+/// after the variable (issue #278).
+pub fn resolve_font_family_ref(family: &str, vars: Option<&Vars>, theme: &Theme) -> Option<String> {
+    if !is_variable_ref(family.trim()) {
+        return Some(family.to_string());
+    }
+    match resolve_variable_ref(family.trim(), vars, theme)? {
+        VariableScalar::Str(s) if !s.trim().is_empty() => Some(s),
+        _ => None,
+    }
+}
+
+/// Resolve a `$ref` font family in place: a resolved value replaces it, an
+/// unresolvable ref is cleared so text measures + paints in the default
+/// family rather than looking up a font literally named `$token`.
+fn resolve_font_family_slot(slot: &mut Option<String>, vars: Option<&Vars>, theme: &Theme) -> bool {
+    let Some(family) = slot.as_deref() else {
+        return false;
+    };
+    if !is_variable_ref(family.trim()) {
+        return false;
+    }
+    *slot = resolve_font_family_ref(family, vars, theme);
+    true
+}
+
 /// Resolve a numeric `$ref` to f64 (TS `resolveNumericRef`).
 pub fn resolve_numeric_ref(reference: &str, vars: Option<&Vars>, theme: &Theme) -> Option<f64> {
     match resolve_variable_ref(reference, vars, theme)? {
@@ -245,6 +273,26 @@ fn resolve_number_or_expression(
     false
 }
 
+/// A `$variable` corner radius → its number (issue #270). An unresolvable
+/// ref paints square rather than failing the whole node.
+fn resolve_corner_radius(
+    radius: &mut Option<jian_ops_schema::node::CornerRadius>,
+    vars: Option<&Vars>,
+    theme: &Theme,
+) -> bool {
+    use jian_ops_schema::node::CornerRadius;
+    let Some(CornerRadius::Expression(expr)) = radius.as_ref() else {
+        return false;
+    };
+    let resolved = if is_variable_ref(expr) {
+        resolve_numeric_ref(expr, vars, theme).unwrap_or(0.0)
+    } else {
+        expr.trim().parse().unwrap_or(0.0)
+    };
+    *radius = Some(CornerRadius::Uniform(resolved));
+    true
+}
+
 /// Resolve every `$variable` reference in `node` (and its subtree)
 /// in place — the TS `resolveNodeForCanvas` walk. Returns whether
 /// anything changed.
@@ -268,6 +316,10 @@ pub fn resolve_node_for_canvas(node: &mut PenNode, vars: Option<&Vars>, theme: &
                 changed = true;
             }
         }
+        changed |= resolve_corner_radius(&mut container.corner_radius, vars, theme);
+    }
+    if let PenNode::Image(image) = node {
+        changed |= resolve_corner_radius(&mut image.corner_radius, vars, theme);
     }
 
     // Fills — solid colours + gradient stops.
@@ -320,6 +372,7 @@ pub fn resolve_node_for_canvas(node: &mut PenNode, vars: Option<&Vars>, theme: &
             }
             TextContent::Styled(segments) => {
                 for segment in segments {
+                    changed |= resolve_font_family_slot(&mut segment.font_family, vars, theme);
                     if let Some(fill) = segment.fill.as_mut() {
                         if is_variable_ref(fill) {
                             *fill = resolve_color_ref(fill, vars, theme)
@@ -329,6 +382,19 @@ pub fn resolve_node_for_canvas(node: &mut PenNode, vars: Option<&Vars>, theme: &
                     }
                 }
             }
+        }
+        changed |= resolve_font_family_slot(&mut text.font_family, vars, theme);
+        // `$variable` font size (issue #270). Unresolvable → the default
+        // size, not a 0 px glyph.
+        let size_ref = match text.font_size.as_ref() {
+            Some(NumberOrExpression::Expression(expr)) if is_variable_ref(expr) => {
+                Some(expr.clone())
+            }
+            _ => None,
+        };
+        if let Some(expr) = size_ref {
+            text.font_size = resolve_numeric_ref(&expr, vars, theme).map(Into::into);
+            changed = true;
         }
         if let Some(FontWeight::Keyword(keyword)) = text.font_weight.as_ref() {
             if is_variable_ref(keyword) {
@@ -372,8 +438,15 @@ pub fn roots_have_tokens(nodes: &[PenNode]) -> bool {
     fn expr_has_token(value: &NumberOrExpression) -> bool {
         matches!(value, NumberOrExpression::Expression(e) if is_variable_ref(e))
     }
+    fn radius_has_token(radius: Option<&jian_ops_schema::node::CornerRadius>) -> bool {
+        matches!(
+            radius,
+            Some(jian_ops_schema::node::CornerRadius::Expression(_))
+        )
+    }
     fn container_has_token(container: &jian_ops_schema::node::container::ContainerProps) -> bool {
-        container.gap.as_ref().is_some_and(expr_has_token)
+        radius_has_token(container.corner_radius.as_ref())
+            || container.gap.as_ref().is_some_and(expr_has_token)
             || matches!(&container.padding, Some(Padding::Expression(e)) if is_variable_ref(e))
     }
     fn node_has_token(node: &PenNode) -> bool {
@@ -399,6 +472,7 @@ pub fn roots_have_tokens(nodes: &[PenNode]) -> bool {
             }
         }
         let container_token = match node {
+            PenNode::Image(n) => radius_has_token(n.corner_radius.as_ref()),
             PenNode::Frame(n) => container_has_token(&n.container),
             PenNode::Group(n) => container_has_token(&n.container),
             PenNode::Rectangle(n) => container_has_token(&n.container),
@@ -410,11 +484,14 @@ pub fn roots_have_tokens(nodes: &[PenNode]) -> bool {
         if let PenNode::Text(text) = node {
             let content_token = match &text.content {
                 TextContent::Plain(content) => is_variable_ref(content),
-                TextContent::Styled(segments) => segments
-                    .iter()
-                    .any(|s| s.fill.as_deref().is_some_and(is_variable_ref)),
+                TextContent::Styled(segments) => segments.iter().any(|s| {
+                    s.fill.as_deref().is_some_and(is_variable_ref)
+                        || s.font_family.as_deref().is_some_and(is_variable_ref)
+                }),
             };
             if content_token
+                || text.font_family.as_deref().is_some_and(is_variable_ref)
+                || text.font_size.as_ref().is_some_and(expr_has_token)
                 || matches!(&text.font_weight, Some(FontWeight::Keyword(k)) if is_variable_ref(k))
             {
                 return true;

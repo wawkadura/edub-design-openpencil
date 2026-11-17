@@ -12,8 +12,8 @@ use super::WidgetHost;
 use op_editor_ui::widgets::host_canvas_geometry as canvas_geometry;
 use op_editor_ui::widgets::variables_panel::VariablesPanel;
 use op_editor_ui::widgets::{
-    AIChatPlaceholder, CanvasViewport, LayerPanel, LayoutCx, LocalePicker, PaintCx, PropertyPanel,
-    ShapePicker, StatusBar, Toolbar, Widget, TOOLBAR_WIDTH,
+    motion_timeline, AIChatPlaceholder, CanvasViewport, LayerPanel, LayoutCx, PaintCx,
+    PropertyPanel, ShapePicker, StatusBar, Toolbar, Widget, TOOLBAR_WIDTH,
 };
 use op_editor_ui::{Point2D, Rect, RenderBackend};
 
@@ -53,6 +53,7 @@ impl WidgetHost {
         viewport_height: f32,
     ) {
         self.image_input_geometry = None;
+        let _shader_frame = op_editor_ui::shader_clock::begin_frame(self.now_ms);
         // Rotate the transcript-cache owner if the active chat session changed,
         // BEFORE any resolve stores under it (mirrors native paint).
         self.rotate_chat_owner_if_session_changed();
@@ -105,6 +106,9 @@ impl WidgetHost {
                 // silently dropped.
                 preview.set_now_ms(self.now_ms);
                 let _ = preview.pump(self.now_ms);
+            }
+            self.deliver_preview_effects();
+            if let Some(preview) = self.preview.as_mut() {
                 let outcome = preview.reconcile(self.now_ms);
                 if outcome.repaint {
                     let warnings = preview.warnings().to_vec();
@@ -164,6 +168,8 @@ impl WidgetHost {
             return;
         }
 
+        // Advance a playing motion timeline to this frame's time.
+        self.editor_state.tick_motion_timeline(self.now_ms);
         // Rebuild the layout-resolved render scene ONCE for the whole
         // paint pass. Every widget builder below reads `editor_state`
         // directly; the canvas reads `self.layout_scene`.
@@ -344,14 +350,14 @@ impl WidgetHost {
             } else {
                 // NORMAL PAINT path — the canvas reads editor state + the
                 // layout-resolved render scene (`refresh_layout_scene`).
-                let mut transition_scene = None;
-                if let Some(transition) = self.layout_transition.as_ref() {
-                    if transition.is_active(self.now_ms) {
-                        let mut scene = self.layout_scene.clone();
-                        transition.apply_to_scene(&mut scene, self.now_ms);
-                        transition_scene = Some(scene);
-                    }
-                }
+                // Mid layout transition and/or at the timeline playhead.
+                let transition_scene =
+                    op_editor_ui::widgets::canvas_paint_scene::canvas_paint_scene(
+                        &self.editor_state,
+                        &self.layout_scene,
+                        self.layout_transition.as_ref(),
+                        self.now_ms,
+                    );
                 let canvas_scene = transition_scene.as_ref().unwrap_or(&self.layout_scene);
                 let mut canvas = CanvasViewport::from_editor(&self.editor_state, canvas_scene);
                 canvas.now_ms = self.now_ms;
@@ -366,14 +372,14 @@ impl WidgetHost {
             #[cfg(not(feature = "canvaskit"))]
             {
                 // NORMAL PAINT path (non-canvaskit build)
-                let mut transition_scene = None;
-                if let Some(transition) = self.layout_transition.as_ref() {
-                    if transition.is_active(self.now_ms) {
-                        let mut scene = self.layout_scene.clone();
-                        transition.apply_to_scene(&mut scene, self.now_ms);
-                        transition_scene = Some(scene);
-                    }
-                }
+                // Mid layout transition and/or at the timeline playhead.
+                let transition_scene =
+                    op_editor_ui::widgets::canvas_paint_scene::canvas_paint_scene(
+                        &self.editor_state,
+                        &self.layout_scene,
+                        self.layout_transition.as_ref(),
+                        self.now_ms,
+                    );
                 let canvas_scene = transition_scene.as_ref().unwrap_or(&self.layout_scene);
                 let mut canvas = CanvasViewport::from_editor(&self.editor_state, canvas_scene);
                 canvas.now_ms = self.now_ms;
@@ -386,6 +392,9 @@ impl WidgetHost {
             }
         }
 
+        if !workspace_visible {
+            self.paint_comment_pins_layer(&mut *backend, viewport_width, viewport_height);
+        }
         let property_panel = PropertyPanel::for_selection_at_with_scene(
             &self.editor_state,
             &self.layout_scene,
@@ -459,6 +468,9 @@ impl WidgetHost {
             };
             chat.paint(&mut cx, chat_rect);
         }
+
+        // Motion timeline, docked under the canvas region (native §7.9).
+        motion_timeline::paint(backend, &self.editor_state, viewport_width, viewport_height);
 
         if let Some(status_rect) =
             canvas_geometry::status_bar_rect(&self.editor_state, viewport_width, viewport_height)
@@ -570,14 +582,11 @@ impl WidgetHost {
             menu.paint_select(&mut cx, anchor, menu_viewport);
         }
 
-        if ui.locale_picker.open {
-            let picker_rect = self.locale_picker_rect(viewport_width);
-            let picker = LocalePicker::for_editor_ui(&self.editor_state.editor_ui);
-            let mut cx = PaintCx {
-                backend: &mut *backend,
-            };
-            picker.paint(&mut cx, picker_rect);
-        }
+        op_editor_ui::widgets::locale_picker::paint_locale_picker_overlay(
+            &self.editor_state,
+            backend,
+            viewport_width,
+        );
 
         // Shared collaboration popover. Web builds normally keep the
         // capability unavailable for M1, but the real surface is present for

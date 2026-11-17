@@ -88,6 +88,7 @@ pub fn toolbar_action(a: crate::widgets::toolbar::ToolbarAction) -> op_editor_co
         W::Redo => O::Redo,
         W::ToggleVariablesPanel => O::ToggleVariablesPanel,
         W::ToggleDesignPanel => O::ToggleDesignPanel,
+        W::ToggleComments => O::ToggleComments,
     }
 }
 
@@ -201,6 +202,14 @@ pub fn export_dialog_button(
     match hit {
         W::Format(f) => O::Format(export_format(f)),
         W::Scale(s) => O::Scale(s),
+        W::MotionFormat(format) => O::MotionFormat(format),
+        W::PreviousClip => O::PreviousClip,
+        W::NextClip => O::NextClip,
+        W::FrameRate(fps) => O::FrameRate(fps),
+        W::MotionDuration => O::MotionDuration,
+        W::RepeatMotion => O::RepeatMotion,
+        W::MotionBackground(background) => O::MotionBackground(background),
+        W::ReducedMotion => O::ReducedMotion,
         W::Cancel => O::Cancel,
         W::Export => O::Export,
     }
@@ -313,6 +322,7 @@ pub fn topbar_button_hover(
         W::ToggleGitPanel => O::ToggleGitPanel,
         W::ToggleFullscreen => O::ToggleFullscreen,
         W::TogglePreview => O::TogglePreview,
+        W::ReplayMotion => O::ReplayMotion,
         W::Account => O::OpenAccount,
     }
 }

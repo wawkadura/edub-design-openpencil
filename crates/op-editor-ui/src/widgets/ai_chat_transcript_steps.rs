@@ -1,3 +1,4 @@
+use crate::Rect;
 use op_editor_core::{ChatActivity, ChatActivityStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +20,85 @@ pub(crate) struct ParsedStep {
 pub(crate) struct StepExtraction {
     pub steps: Vec<ParsedStep>,
     pub visible_text: String,
+}
+
+/// One compact design-progress row, matching the TS chat's action
+/// step treatment rather than dumping progress into reasoning text.
+pub(crate) struct ActionStep {
+    pub rect: Rect,
+    /// Stable slot in the message's combined legacy/activity override list.
+    pub source_index: usize,
+    pub label: String,
+    pub details: Vec<String>,
+    pub expanded: bool,
+    pub done: bool,
+    pub active: bool,
+    pub failed: bool,
+    /// True only for a failed row backed by a persisted
+    /// `ChatMessage::failed_subtasks` entry — gates the row's "Retry" icon
+    /// so it never paints a dead button for a failure with nothing to
+    /// replay (e.g. every activity flipped to `Error` by a whole-run
+    /// catastrophic failure, which produces no `RunSummary` and therefore
+    /// no persisted subtask spec).
+    pub retryable: bool,
+    /// The structured body painted instead of `details` when they are
+    /// quality-repair records.
+    pub detail_body: Option<super::ai_chat_transcript_detail_body::DetailBody>,
+}
+
+/// The font size step detail rows paint at, smaller than the body text.
+pub(crate) const DETAIL_FONT: f32 = 10.0;
+
+/// Wrap a step's detail text into rows. Each `\n`-separated line is one
+/// item (a quality pass reports one repair per line): it wraps at the detail
+/// font's own width, which holds more than the body-text `budget` it is
+/// derived from, and its continuation rows hang under the first so the
+/// items stay apart.
+pub(crate) fn wrap_detail(text: &str, budget: u32) -> Vec<String> {
+    use super::ai_chat_transcript::BODY_FONT;
+    use super::ai_chat_transcript_text::wrap_units;
+    const HANG: &str = "   ";
+    let width = ((budget as f32 * BODY_FONT / DETAIL_FONT) as u32)
+        .saturating_sub(4)
+        .max(12);
+    text.split('\n')
+        .flat_map(|line| {
+            wrap_units(line, width)
+                .into_iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    if index == 0 {
+                        row
+                    } else {
+                        format!("{HANG}{row}")
+                    }
+                })
+        })
+        .collect()
+}
+
+/// [`action_step_height`] for a row that may carry a structured repair body.
+pub(crate) fn step_height(
+    expanded: bool,
+    detail_count: usize,
+    body: Option<&super::ai_chat_transcript_detail_body::DetailBody>,
+) -> f32 {
+    use super::ai_chat_transcript::{ACTION_DETAIL_GAP, ACTION_STEP_H};
+    match body {
+        Some(body) if expanded => ACTION_STEP_H + ACTION_DETAIL_GAP + body.height,
+        _ => action_step_height(expanded, detail_count),
+    }
+}
+
+/// Height of one step row: the header alone when collapsed (or with nothing
+/// to reveal), plus one line per detail row when expanded.
+pub(crate) fn action_step_height(expanded: bool, detail_count: usize) -> f32 {
+    use super::ai_chat_transcript::{ACTION_DETAIL_GAP, ACTION_DETAIL_LINE_H, ACTION_STEP_H};
+    if !expanded || detail_count == 0 {
+        ACTION_STEP_H
+    } else {
+        ACTION_STEP_H + ACTION_DETAIL_GAP + detail_count as f32 * ACTION_DETAIL_LINE_H
+    }
 }
 
 pub(crate) fn activity_step(activity: &ChatActivity) -> ParsedStep {

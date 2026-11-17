@@ -48,6 +48,19 @@ impl WidgetHost {
         if self.input_active() {
             return false;
         }
+        if key.eq_ignore_ascii_case("c") {
+            return self
+                .dispatch_toolbar_action(op_editor_ui::widgets::ToolbarAction::ToggleComments);
+        }
+        // M — the motion timeline (H / Space stay pan).
+        if key.eq_ignore_ascii_case("m") {
+            let toggled =
+                op_editor_ui::widgets::motion_timeline_flow::toggle(&mut self.editor_state);
+            if toggled {
+                self.mark_dirty();
+            }
+            return toggled;
+        }
         let tool = match key.to_ascii_lowercase().as_str() {
             "v" => op_editor_core::Tool::Select,
             "r" => op_editor_core::Tool::Rect,

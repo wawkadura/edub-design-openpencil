@@ -53,7 +53,7 @@
 //! [`AppMode`] + the per-root `solve_roots` + the app-mode query methods
 //! live in `app_mode.rs`, keyboard/focus/pointer dispatch + the
 //! scene→runtime coordinate mapping live in `input.rs`, and the leaf
-//! formatter helpers (`apply_widget_state` / `display_string` /
+//! formatter helpers (`apply_widget_state` /
 //! `format_warning`) live in `scene_helpers.rs`. The crate root keeps
 //! only module declarations and stable re-exports.
 
@@ -67,12 +67,12 @@ mod auto_wire;
 #[cfg(not(feature = "gl-host"))]
 mod auto_wire_stub;
 mod binding_overlay;
-mod binding_overlay_apply;
 mod binding_sites;
 mod debug_trace;
 pub mod device_frame;
 #[cfg(all(test, not(target_os = "windows")))]
 mod device_frame_tests;
+mod effect_delivery;
 mod effects;
 mod error;
 mod input;
@@ -82,6 +82,7 @@ mod interaction_state;
 mod invalidation;
 mod mode_transition;
 mod motion;
+mod motion_viewport;
 mod present;
 mod scene_helpers;
 mod session;
@@ -100,6 +101,7 @@ mod ui_actions;
 
 /// R3 effect queue — the bounded FIFO between the engine's effect sink
 /// and the host.
+pub use effect_delivery::{PreviewPlatformRequest, EDITOR_PREVIEW_CAPABILITIES, PREVIEW_TOAST_KEY};
 pub use effects::PreviewEffectQueue;
 /// R4 Canonical PreviewInput — the unified input envelope, dispatch
 /// outcome, and lifecycle phases behind
@@ -149,7 +151,7 @@ pub(crate) use session::RootFrame;
 /// Test-only layout backend + font-registry lock, shared by every
 /// preview test module.
 #[cfg(all(test, not(target_os = "windows")))]
-pub(crate) use session::{font_registry_test_support, test_measure};
+pub(crate) use test_helpers::{font_registry_test_support, test_measure};
 
 // Gated off Windows: preview tests exercise runtime layout through
 // `jian_skia::SkiaMeasure`, which hits DirectWrite in Windows CI and aborts
@@ -194,9 +196,15 @@ mod tests_local_pagination;
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests_motion;
 #[cfg(all(test, not(target_os = "windows")))]
+mod tests_motion_golden;
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests_motion_viewport;
+#[cfg(all(test, not(target_os = "windows")))]
 mod tests_multi_pointer;
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests_page_scroll;
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests_panel_authored;
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests_pointer_bindings;
 #[cfg(all(test, not(target_os = "windows")))]
@@ -215,6 +223,8 @@ mod tests_tabs;
 mod tests_transition;
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests_ui_actions;
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests_undeclared_state;
 #[cfg(all(test, not(target_os = "windows")))]
 mod tests_widget_states;
 // Same platform gate as `tests_app_mode` / `tests_transition`, whose

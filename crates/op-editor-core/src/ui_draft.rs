@@ -124,6 +124,18 @@ pub enum PropertyFocus {
     /// generator's declared `params` list. Free text for every kind; the
     /// commit parses it against the parameter's kind.
     GeneratorParam(usize),
+    /// Interactions-section free-text parameter (toast text, URL, copy
+    /// text, state key, delay ms) of action `index` under `trigger`.
+    InteractionParam(crate::interaction_edit::InteractionTrigger, usize),
+    InteractionTransitionDuration(crate::interaction_edit::InteractionTrigger, usize),
+    /// Motion-section text field of animation `index`.
+    MotionField(usize, crate::motion_summary::MotionField),
+    /// Motion-section transition duration (ms).
+    TransitionDuration,
+    /// Keyframe-values mode: the value of property `index` of the
+    /// keyframe selected on the timeline. Free text (numbers and `#hex`
+    /// colours); the commit parses it per property.
+    MotionKeyframeValue(usize),
 }
 
 impl PropertyFocus {
@@ -161,6 +173,9 @@ impl PropertyFocus {
                 | PropertyFocus::WidgetBindKey
                 | PropertyFocus::VideoSrc
                 | PropertyFocus::GeneratorParam(_)
+                | PropertyFocus::InteractionParam(..)
+                | PropertyFocus::MotionField(_, crate::motion_summary::MotionField::Id)
+                | PropertyFocus::MotionKeyframeValue(_)
         )
     }
 
@@ -197,6 +212,7 @@ impl PropertyFocus {
                 | PropertyFocus::WidgetMin
                 | PropertyFocus::WidgetMax
                 | PropertyFocus::WidgetStep
+                | PropertyFocus::MotionField(_, crate::motion_summary::MotionField::Curve(_))
         )
     }
 }

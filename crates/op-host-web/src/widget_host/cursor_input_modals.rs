@@ -37,6 +37,21 @@ impl WidgetHost {
         {
             return Some(true);
         }
+        // A motion timeline drag holds the pointer until release; Alt
+        // turns snapping off.
+        let (vw, vh) = (self.last_viewport_w, self.last_viewport_h);
+        let point = Point2D::new(x, y);
+        if op_editor_ui::widgets::motion_timeline_flow::drag(
+            &mut self.editor_state,
+            point,
+            vw,
+            vh,
+            self.now_ms,
+            !self.alt_held,
+        ) {
+            self.mark_dirty();
+            return Some(true);
+        }
         // Missing-fonts modal — owns the cursor while open. Hover the
         // per-row choose-file buttons + the dismiss action.
         if self.editor_state.editor_ui.missing_fonts_modal_open {
@@ -94,6 +109,15 @@ impl WidgetHost {
         }
         if self.editor_state.editor_ui.agent_settings_open {
             return Some(self.update_agent_settings_hover(x, y));
+        }
+        if self.editor_state.editor_ui.export_dialog_open {
+            let dialog =
+                op_editor_ui::widgets::ExportDialog::for_editor(&self.editor_state, vw, vh);
+            let changed = dialog.update_hover(point, &mut self.editor_state.editor_ui);
+            if changed {
+                self.mark_dirty();
+            }
+            return Some(changed);
         }
         None
     }

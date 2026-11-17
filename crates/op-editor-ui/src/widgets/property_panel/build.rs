@@ -177,6 +177,7 @@ impl PropertyPanel {
                 .iter()
                 .any(|n| n.id_str() == state.selection.anchor.as_str());
             let mut snapshot = NodeSnapshot::from_node(node, is_top_level);
+            state.fill_motion_summary(&mut snapshot.interactions.motion);
             if !state.editor_ui.agent_settings.experimental_features_enabled {
                 // The Widget section is an experimental surface. Hide it
                 // unless opted in — the section's paint AND height both key
@@ -362,7 +363,12 @@ impl PropertyPanel {
             effect_add_picker_open: ui.effect_add_picker_open,
             interaction_menu_open: ui.interaction_menu_open,
             interaction_menu_hover: ui.interaction_menu_hover,
-            screen_paths: crate::widgets::property_panel_interactions::document_screen_paths(state),
+            interaction_menu_target: ui.interaction_menu_target.clone(),
+            interaction_ctx: if caps_interactions_needed(state) {
+                state.interaction_context()
+            } else {
+                Default::default()
+            },
             color_variable_picker_open: ui.property_color_variable_picker_open,
             color_variables,
             fill_variable_ref,
@@ -454,4 +460,10 @@ fn live_codegen_target_ids(state: &EditorState) -> Vec<String> {
         .iter()
         .map(|n| n.id_str().to_string())
         .collect()
+}
+
+/// The interaction picker context walks the selection's screen subtree;
+/// skip it when nothing is selected (page-only panel).
+fn caps_interactions_needed(state: &op_editor_core::EditorState) -> bool {
+    state.selection.anchor.is_real()
 }

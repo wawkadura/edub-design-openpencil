@@ -8,9 +8,9 @@ use crate::backend::NativeFrameBackend;
 use op_editor_ui::widgets::editor_state_ext::theme_for;
 use op_editor_ui::widgets::host_canvas_geometry as canvas_geometry;
 use op_editor_ui::widgets::{
-    variables_panel::VariablesPanel, AIChatPlaceholder, AlignToolbar, CanvasViewport, GitPanel,
-    HomeSurface, LayoutCx, LocalePicker, PaintCx, PropertyPanel, ShapePicker, StatusBar, Toolbar,
-    TopBar, Widget, TOOLBAR_WIDTH, TOP_BAR_HEIGHT,
+    motion_timeline, variables_panel::VariablesPanel, AIChatPlaceholder, AlignToolbar,
+    CanvasViewport, GitPanel, HomeSurface, LayoutCx, PaintCx, PropertyPanel, ShapePicker,
+    StatusBar, Toolbar, TopBar, Widget, TOOLBAR_WIDTH, TOP_BAR_HEIGHT,
 };
 use op_editor_ui::{Point2D, Rect, RenderBackend};
 
@@ -23,6 +23,8 @@ impl WidgetHostNative {
         viewport_height: f32,
     ) {
         self.image_input_geometry = None;
+        self.degraded_canvas_on_screen = false;
+        let _shader_frame = op_editor_ui::shader_clock::begin_frame(self.now_ms);
         self.publish_viewport_geometry(viewport_width, viewport_height);
         // Rotate the transcript-cache owner if the active chat session changed
         // since the last frame, BEFORE any resolve stores under it — the new
@@ -118,6 +120,7 @@ impl WidgetHostNative {
         // conflict with `ui`'s borrow of `self.editor_state.editor_ui`.
         let mut preview_switched = false;
         let mut switched_screen_rect = None;
+        self.deliver_preview_effects();
         if let Some(preview) = self.preview.as_mut() {
             let outcome = preview.reconcile(self.now_ms);
             if outcome.repaint {
@@ -136,6 +139,8 @@ impl WidgetHostNative {
             }
         }
 
+        // Advance a playing motion timeline to this frame's time.
+        self.editor_state.tick_motion_timeline(self.now_ms);
         // Rebuild the layout-resolved render scene ONCE for the whole
         // paint pass. Every widget builder below reads `editor_state`
         // directly; the canvas reads `self.layout_scene`.
@@ -243,7 +248,10 @@ impl WidgetHostNative {
                     self.paint_preview_switcher(&mut *frame, canvas_rect);
                     self.paint_screen_switcher(&mut *frame, canvas_rect);
                 }
-            } else if !self.serve_canvas_from_pan_cache(frame, canvas_rect) {
+            } else if self.serve_canvas_from_pan_cache(frame, canvas_rect) {
+                self.degraded_canvas_on_screen = self.pan_cache.as_ref().is_none_or(|c| !c.sharp);
+            } else {
+                self.degraded_canvas_on_screen = self.fast_interaction_active();
                 // PAINT path — the canvas reads editor state + the
                 // layout-resolved render scene (`refresh_layout_scene`).
                 // During a live pan gesture the frame is rendered once
@@ -253,14 +261,14 @@ impl WidgetHostNative {
                 // would invalidate the freshly built layer anyway.
                 let build_pan_cache = self.pan_cache_usable() && !self.last_gesture_was_zoom;
                 let cached_layer = {
-                    let mut transition_scene = None;
-                    if let Some(transition) = self.layout_transition.as_ref() {
-                        if transition.is_active(self.now_ms) {
-                            let mut scene = self.layout_scene.clone();
-                            transition.apply_to_scene(&mut scene, self.now_ms);
-                            transition_scene = Some(scene);
-                        }
-                    }
+                    // Mid layout transition and/or at the timeline playhead.
+                    let transition_scene =
+                        op_editor_ui::widgets::canvas_paint_scene::canvas_paint_scene(
+                            &self.editor_state,
+                            &self.layout_scene,
+                            self.layout_transition.as_ref(),
+                            self.now_ms,
+                        );
                     let canvas_scene = transition_scene.as_ref().unwrap_or(&self.layout_scene);
                     let mut canvas = CanvasViewport::from_editor(&self.editor_state, canvas_scene);
                     canvas.now_ms = self.now_ms;
@@ -318,6 +326,9 @@ impl WidgetHostNative {
             }
         }
 
+        if !presenting && !workspace_visible {
+            self.paint_comment_pins_layer(&mut *frame, viewport_width, viewport_height);
+        }
         // The phone reader's chrome frames the canvas it just painted
         // into the stage; the chat sheet and its scrim paint above it.
         self.paint_works_reader(frame, viewport_width, viewport_height);
@@ -443,6 +454,9 @@ impl WidgetHostNative {
         if !presenting {
             self.paint_rail_canvas_edge(frame, viewport_height);
         }
+
+        // 7.9. Motion timeline, docked under the canvas region.
+        motion_timeline::paint(frame, &self.editor_state, viewport_width, viewport_height);
 
         // 8. StatusBar — floating bottom-right.
         if let Some(status_rect) =
@@ -600,14 +614,11 @@ impl WidgetHostNative {
 
         // 10. LocalePicker — top-most overlay so it covers chat /
         //     toolbar / status when open.
-        if ui.locale_picker.open {
-            let picker_rect = self.locale_picker_rect(viewport_width);
-            let picker = LocalePicker::for_editor_ui(&self.editor_state.editor_ui);
-            let mut cx = PaintCx {
-                backend: &mut *frame,
-            };
-            picker.paint(&mut cx, picker_rect);
-        }
+        op_editor_ui::widgets::locale_picker::paint_locale_picker_overlay(
+            &self.editor_state,
+            frame,
+            viewport_width,
+        );
 
         // Collaboration popover — a real shared widget anchored to the
         // collaboration status chip. It consumes only sanitized UI state;
@@ -684,7 +695,7 @@ impl WidgetHostNative {
                     a: 0.45,
                 },
             );
-            let dlg = ExportDialog::centered(viewport_width, viewport_height);
+            let dlg = ExportDialog::for_editor(&self.editor_state, viewport_width, viewport_height);
             dlg.paint(&mut *frame, &self.theme, &self.editor_state.editor_ui);
         }
 

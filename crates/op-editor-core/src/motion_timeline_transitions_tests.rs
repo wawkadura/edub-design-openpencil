@@ -1,0 +1,183 @@
+use super::*;
+use crate::EditorCommand;
+use serde_json::json;
+
+fn fade(delay: u64) -> serde_json::Value {
+    json!({
+        "trigger": "mount", "durationMs": 400, "delayMs": delay, "easing": "linear",
+        "keyframes": [
+            {"offset": 0, "values": {"opacity": 0}},
+            {"offset": 1, "values": {"opacity": 1}}
+        ]
+    })
+}
+
+fn state() -> EditorState {
+    let doc = jian_ops_schema::load_str(
+        &json!({
+            "version": "1.0",
+            "children": [
+                {"type": "frame", "id": "still", "width": 390, "height": 844, "children": [
+                    {"type": "rectangle", "id": "plain", "width": 10, "height": 10}
+                ]},
+                {"type": "frame", "id": "home", "width": 390, "height": 844, "children": [
+                    {"type": "rectangle", "id": "a", "width": 10, "height": 10,
+                     "animations": [fade(0)]},
+                    {"type": "rectangle", "id": "b", "width": 10, "height": 10,
+                     "animations": [fade(100)]}
+                ]}
+            ]
+        })
+        .to_string(),
+    )
+    .expect("document")
+    .value;
+    EditorState::from_document(doc)
+}
+
+#[test]
+fn the_scope_follows_the_selection_then_the_first_animating_screen() {
+    let mut state = state();
+    // Nothing selected: the first top-level node that animates.
+    assert_eq!(
+        state.motion_timeline_scope().map(PenNodeExt::id_str),
+        Some("home")
+    );
+    state.apply(EditorCommand::SetSelection {
+        node_id: NodeId::new("plain"),
+    });
+    assert_eq!(
+        state.motion_timeline_scope().map(PenNodeExt::id_str),
+        Some("still")
+    );
+    // A picked scope wins; a stale one falls back.
+    state.pick_motion_timeline_scope("home");
+    assert_eq!(
+        state.motion_timeline_scope().map(PenNodeExt::id_str),
+        Some("home")
+    );
+    state.editor_ui.motion_timeline.scope_root = Some("gone".into());
+    assert_eq!(
+        state.motion_timeline_scope().map(PenNodeExt::id_str),
+        Some("still")
+    );
+}
+
+#[test]
+fn a_picked_screen_holds_until_the_selection_moves_to_another_screen() {
+    let mut state = state();
+    state.pick_motion_timeline_scope("still");
+    let scope = |state: &EditorState| {
+        state
+            .motion_timeline_scope()
+            .map(|node| node.id_str().to_owned())
+    };
+    // Nothing selected: the pick wins over the first animating screen.
+    assert_eq!(scope(&state).as_deref(), Some("still"));
+    // Selecting inside the picked screen keeps it...
+    state.apply(EditorCommand::SetSelection {
+        node_id: NodeId::new("plain"),
+    });
+    assert_eq!(scope(&state).as_deref(), Some("still"));
+    // ...selecting in another screen follows the selection again.
+    state.apply(EditorCommand::SetSelection {
+        node_id: NodeId::new("a"),
+    });
+    assert_eq!(scope(&state).as_deref(), Some("home"));
+}
+
+#[test]
+fn closing_the_panel_drops_the_keyframe_selection_and_menu() {
+    let mut state = state();
+    state.toggle_motion_timeline();
+    let timeline = &mut state.editor_ui.motion_timeline;
+    timeline.scope_menu_open = true;
+    timeline
+        .selection
+        .push(crate::editor_ui_state::TimelineKeyframeRef {
+            node_id: "a".into(),
+            animation: 0,
+            keyframe: 0,
+        });
+    state.toggle_motion_timeline();
+    let timeline = &state.editor_ui.motion_timeline;
+    assert!(timeline.selection.is_empty() && !timeline.scope_menu_open);
+}
+
+#[test]
+fn playback_follows_the_clock_and_stops_or_wraps_at_the_end() {
+    let mut state = state();
+    state.toggle_motion_timeline();
+    assert_eq!(state.motion_timeline_projection().clip_ms, 500.0);
+    state.toggle_motion_playback(1_000);
+    assert_eq!(state.motion_timeline_deadline(1_000), Some(1_016));
+    assert!(state.tick_motion_timeline(1_200));
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 200.0);
+    // Past the end without looping: stop on the last frame.
+    assert!(state.tick_motion_timeline(2_000));
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 500.0);
+    assert!(!state.editor_ui.motion_timeline.playing);
+    assert_eq!(state.motion_timeline_deadline(2_000), None);
+    // Playing again from the end restarts; looping wraps.
+    state.toggle_motion_loop();
+    state.toggle_motion_playback(3_000);
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 0.0);
+    state.tick_motion_timeline(3_700);
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 200.0);
+    assert!(state.editor_ui.motion_timeline.playing);
+}
+
+#[test]
+fn scrubbing_clamps_and_closing_stops() {
+    let mut state = state();
+    state.toggle_motion_timeline();
+    state.scrub_motion_playhead(9_999.0, 0);
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 500.0);
+    state.scrub_motion_playhead(-5.0, 0);
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 0.0);
+    state.toggle_motion_playback(100);
+    state.scrub_motion_playhead(300.0, 150);
+    state.tick_motion_timeline(250);
+    assert_eq!(state.editor_ui.motion_timeline.playhead_ms, 400.0);
+    state.toggle_motion_timeline();
+    assert!(!state.editor_ui.motion_timeline.playing);
+    // The manual tab without an id projects nothing and cannot play.
+    state.toggle_motion_timeline();
+    state.set_motion_timeline_tab(MotionTimelineTab::Manual, None);
+    state.toggle_motion_playback(0);
+    assert!(!state.editor_ui.motion_timeline.playing);
+}
+
+#[test]
+fn opening_moves_to_the_first_tab_with_motion() {
+    let doc = jian_ops_schema::load_str(
+        &json!({
+            "version": "1.0",
+            "children": [{"type": "frame", "id": "home", "width": 390, "height": 844, "children": [
+                {"type": "rectangle", "id": "a", "width": 10, "height": 10, "animations": [{
+                    "trigger": "manual", "id": "pulse", "durationMs": 300, "easing": "linear",
+                    "keyframes": [
+                        {"offset": 0, "values": {"opacity": 0}},
+                        {"offset": 1, "values": {"opacity": 1}}
+                    ]
+                }]}
+            ]}]
+        })
+        .to_string(),
+    )
+    .expect("document")
+    .value;
+    let mut manual_only = EditorState::from_document(doc);
+    manual_only.toggle_motion_timeline();
+    let timeline = &manual_only.editor_ui.motion_timeline;
+    assert_eq!(timeline.tab, MotionTimelineTab::Manual);
+    assert_eq!(timeline.manual_id.as_deref(), Some("pulse"));
+    // A tab that already has motion is kept.
+    let mut on_load = state();
+    on_load.set_motion_timeline_tab(MotionTimelineTab::Mount, None);
+    on_load.toggle_motion_timeline();
+    assert_eq!(
+        on_load.editor_ui.motion_timeline.tab,
+        MotionTimelineTab::Mount
+    );
+}

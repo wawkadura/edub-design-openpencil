@@ -180,6 +180,31 @@ pub(super) fn paint_home(surface: &HomeSurface<'_>, cx: &mut PaintCx<'_>, rect: 
     super::focus::paint_home_focus_ring(surface, cx, &layout, palette);
 }
 
+pub(super) fn paint_language_button(
+    surface: &HomeSurface<'_>,
+    cx: &mut PaintCx<'_>,
+    rect: Rect,
+    palette: StudioPalette,
+) {
+    let active =
+        surface.ui.locale_picker.open || surface.state.pressed == Some(HomeHit::ToggleLocale);
+    if active || surface.state.hover == Some(HomeHit::ToggleLocale) {
+        cx.backend.fill_round_rect(rect, 9.0, palette.button_hover);
+    }
+    let size = 18.0;
+    draw_icon(
+        cx.backend,
+        Icon::Globe,
+        Point2D::new(
+            rect.origin.x + (rect.size.x - size) / 2.0,
+            rect.origin.y + (rect.size.y - size) / 2.0,
+        ),
+        size,
+        if active { palette.blue } else { palette.ink },
+        1.5,
+    );
+}
+
 fn paint_top_bar(
     surface: &HomeSurface<'_>,
     cx: &mut PaintCx<'_>,
@@ -198,6 +223,17 @@ fn paint_top_bar(
         palette.topbar_line,
         1.0,
     );
+    // Windows / Linux run a borderless window whose only window controls
+    // are the ones the app paints. Home owns the whole top strip, so it
+    // paints the same dots the canvas TopBar does, in the 80 px it keeps
+    // clear for the macOS traffic lights (issue #268).
+    if !cfg!(target_os = "macos") && !surface.ui.touch_chrome() {
+        crate::widgets::paint_window_control_dots(
+            cx,
+            Rect::xywh(0.0, 0.0, width, HOME_TOPBAR_H),
+            surface.ui.topbar_traffic_hover,
+        );
+    }
     // Official mark, 34×34 (the PNG carries internal padding, so its
     // layout box overshoots the visible glyph). 80 px in from the left:
     // the macOS traffic lights own the first ~70 px of a borderless
@@ -252,6 +288,7 @@ fn paint_top_bar(
             pressed,
         );
     }
+    paint_language_button(surface, cx, layout.language, palette);
     // The two 38 px outline buttons.
     for (button, hit, label, icon) in [
         (

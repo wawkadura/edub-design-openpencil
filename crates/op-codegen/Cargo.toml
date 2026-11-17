@@ -12,6 +12,9 @@ path = "src/lib.rs"
 
 [dependencies]
 jian-ops-schema = { path = "../../vendor/jian/crates/jian-ops-schema" }
+# The motion curve compiler: exports Preview's whole-span easing as exact
+# per-keyframe cubic-beziers.
+jian-core = { path = "../../vendor/jian/crates/jian-core" }
 op-editor-core = { path = "../op-editor-core" }
 # Canonical HTML escaping (dependency-free, wasm-clean).
 op-util = { path = "../op-util" }
@@ -27,8 +30,10 @@ base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
 # Round-trip validation for the hand-rolled STORED zip encoder
-# (test-only; never reaches the wasm build).
-zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# (test-only; never reaches the wasm build). STORED entries need no
+# compression feature, and naming deflate-flate2 without a flate2 backend
+# broke `cargo test -p op-codegen` outside a full workspace build.
+zip = { version = "9", default-features = false }
 
 [features]
 # Gates the AI code-generation pipeline (src/ai/). Off by default.

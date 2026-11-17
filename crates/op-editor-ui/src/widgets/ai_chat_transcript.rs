@@ -23,6 +23,7 @@ use super::ai_chat_transcript_design::{
     applied_design_block_label, extract_design_json_blocks, paint_design_block,
     place_design_blocks, DesignBlock,
 };
+use super::ai_chat_transcript_detail_body::detail_body;
 pub(crate) use super::ai_chat_transcript_flow::normalize_narration_markdown;
 use super::ai_chat_transcript_flow::{
     build_activity_flow, build_flow, paint_flow, should_interleave, should_interleave_activities,
@@ -32,13 +33,15 @@ use super::ai_chat_transcript_identity::{
     layout_agent_identity, paint_agent_identity, AgentIdentityHeader,
 };
 use super::ai_chat_transcript_paint_parts::{paint_action_step, paint_collapsible};
+use super::ai_chat_transcript_receipts::{layout_receipts, split_receipts};
 use super::ai_chat_transcript_richtext::{layout_rich, paint_rich, rich_height, rich_line_width};
 use super::ai_chat_transcript_selection::paint_user_bubble_selection;
 pub(crate) use super::ai_chat_transcript_selection::transcript_text_offset_at;
 use super::ai_chat_transcript_steps::{
     activity_step, extract_step_blocks, split_design_progress, step_state, strip_tool_call_xml,
-    ParsedStep,
+    wrap_detail, ParsedStep,
 };
+pub(crate) use super::ai_chat_transcript_steps::{step_height, ActionStep};
 use super::ai_chat_transcript_text::char_display_units;
 pub(crate) use super::ai_chat_transcript_text::wrap_units;
 use super::ai_chat_transcript_tools::{
@@ -102,27 +105,6 @@ pub(crate) struct Collapsible {
     pub collapsed: bool,
     pub body: Rect,
     pub lines: Vec<String>,
-}
-
-/// One compact design-progress row, matching the TS chat's action
-/// step treatment rather than dumping progress into reasoning text.
-pub(crate) struct ActionStep {
-    pub rect: Rect,
-    /// Stable slot in the message's combined legacy/activity override list.
-    pub source_index: usize,
-    pub label: String,
-    pub details: Vec<String>,
-    pub expanded: bool,
-    pub done: bool,
-    pub active: bool,
-    pub failed: bool,
-    /// True only for a failed row backed by a persisted
-    /// `ChatMessage::failed_subtasks` entry — gates the row's "Retry" icon
-    /// so it never paints a dead button for a failure with nothing to
-    /// replay (e.g. every activity flipped to `Error` by a whole-run
-    /// catastrophic failure, which produces no `RunSummary` and therefore
-    /// no persisted subtask spec).
-    pub retryable: bool,
 }
 
 /// The answer-text bubble of a message. `typing` is set on an
@@ -209,10 +191,13 @@ pub(crate) fn build_item(
     } else {
         msg.activities.iter().map(activity_step).collect()
     };
+    let mut receipts = Vec::new();
     let raw_visible_content = if is_user {
         msg.content.clone()
     } else {
-        let display_content = strip_tool_call_xml(failure_copy(locale, &msg.content));
+        let (display_content, found) =
+            split_receipts(&strip_tool_call_xml(failure_copy(locale, &msg.content)));
+        receipts = found;
         let extracted = extract_step_blocks(&display_content, msg.streaming);
         progress_steps.extend(extracted.steps);
         extracted.visible_text
@@ -316,7 +301,7 @@ pub(crate) fn build_item(
         let details: Vec<String> = step
             .details
             .iter()
-            .flat_map(|line| wrap_units(&progress_label(locale, line), budget.saturating_sub(4)))
+            .flat_map(|line| wrap_detail(&progress_label(locale, line), budget))
             .collect();
         // Active work and failures default open so a terminal error exposes
         // its concrete diagnostic. A user click still records an override.
@@ -326,7 +311,8 @@ pub(crate) fn build_item(
             .copied()
             .flatten()
             .unwrap_or(active || failed);
-        let step_h = action_step_height(expanded, details.len());
+        let body = detail_body(&step.details, budget, failed);
+        let step_h = step_height(expanded, details.len(), body.as_ref());
         // `i` only aligns with `msg.activities`' own index when the
         // structured (non-interleaved) path built `progress_steps` directly
         // from `msg.activities` (see the `activity_step` map above) — the
@@ -348,6 +334,7 @@ pub(crate) fn build_item(
             active,
             failed,
             retryable,
+            detail_body: body,
         });
         y += step_h + ACTION_STEP_GAP;
     }
@@ -422,7 +409,8 @@ pub(crate) fn build_item(
         && thinking.is_none()
         && tools.is_none()
         && !activity_interleave
-        && !tool_interleave;
+        && !tool_interleave
+        && receipts.is_empty();
     let bubble = if typing {
         let r = Rect::xywh(
             x,
@@ -474,6 +462,10 @@ pub(crate) fn build_item(
         None
     };
 
+    let base = steps.len();
+    steps.extend(layout_receipts(
+        &receipts, msg, locale, x, &mut y, bubble_w, budget, base,
+    ));
     let mut images = Vec::new();
     if !msg.images.is_empty() {
         if bubble.is_some() {
@@ -511,14 +503,6 @@ pub(crate) fn build_item(
         },
         y,
     )
-}
-
-pub(crate) fn action_step_height(expanded: bool, detail_count: usize) -> f32 {
-    if !expanded || detail_count == 0 {
-        ACTION_STEP_H
-    } else {
-        ACTION_STEP_H + ACTION_DETAIL_GAP + detail_count as f32 * ACTION_DETAIL_LINE_H
-    }
 }
 
 /// Total height (px) of the full transcript laid out from the body top.

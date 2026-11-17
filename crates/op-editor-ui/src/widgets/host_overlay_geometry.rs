@@ -121,6 +121,16 @@ pub fn shape_picker_rect(state: &EditorState, viewport_w: f32, viewport_h: f32) 
     // Mobile: anchored above the dock's Shape slot, centered.
     if state.editor_ui.touch_chrome() {
         let dock = super::host_canvas_geometry::touch_dock_rect(state, viewport_w, viewport_h);
+        if state.editor_ui.native_touch_dock {
+            let height = ShapePicker::panel_height();
+            let top = super::host_canvas_geometry::touch_app_bar_height(state);
+            return Rect::xywh(
+                (viewport_w - SHAPE_PICKER_WIDTH - 12.0).max(4.0),
+                ((viewport_h - height) * 0.5).max(top),
+                SHAPE_PICKER_WIDTH,
+                height,
+            );
+        }
         let x = ((viewport_w - SHAPE_PICKER_WIDTH) / 2.0).max(4.0);
         return Rect {
             origin: Point2D::new(x, dock.origin.y - ShapePicker::panel_height() - 8.0),
@@ -178,13 +188,16 @@ pub fn close_import_menu(state: &mut EditorState) {
     state.editor_ui.import_menu.hover = None;
 }
 
-/// Locale-picker dropdown rect — centred under the TopBar globe button,
-/// clamped 8 px inside both viewport edges.
+/// Locale-picker dropdown rect, centred under the visible globe button.
 pub fn locale_picker_rect(state: &EditorState, viewport_w: f32) -> Rect {
-    let globe = TopBar::for_editor_ui(&state.editor_ui).globe_rect(top_bar_rect(viewport_w));
-    let x = (globe.origin.x + globe.size.x / 2.0 - LOCALE_PICKER_WIDTH / 2.0)
-        .max(8.0)
-        .min(viewport_w - LOCALE_PICKER_WIDTH - 8.0);
+    let ui = &state.editor_ui;
+    let globe = if ui.home.visible {
+        super::home_surface::layout::language_button_rect(viewport_w, ui.compact_layout())
+    } else {
+        TopBar::for_editor_ui(ui).globe_rect(top_bar_rect(viewport_w))
+    };
+    let max_x = (viewport_w - LOCALE_PICKER_WIDTH - 8.0).max(8.0);
+    let x = (globe.origin.x + globe.size.x / 2.0 - LOCALE_PICKER_WIDTH / 2.0).clamp(8.0, max_x);
     Rect {
         origin: Point2D::new(x, globe.origin.y + globe.size.y + 6.0),
         size: Point2D::new(LOCALE_PICKER_WIDTH, LocalePicker::panel_height()),

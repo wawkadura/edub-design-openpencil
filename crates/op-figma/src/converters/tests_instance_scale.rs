@@ -6,6 +6,7 @@ use super::tests::{captured_bytes, fresh_ctx, obj, solid_paint, LOOKUP_GUARD};
 use super::*;
 use crate::common::{clear_icon_lookup, set_icon_lookup};
 use crate::figma_types::BlobOrString;
+use crate::vector_decoder::compute_svg_path_bounds;
 use jian_ops_schema::node::container::CornerRadius;
 use jian_ops_schema::node::text::TextContent;
 use jian_ops_schema::node::PenNode;
@@ -280,7 +281,7 @@ fn derived_instance_scales_geometry_and_visual_metrics_into_40px_frame() {
     // Text metrics stay as authored: resizing an instance reflows the
     // text box in Figma, it does not restyle the type. Only the box
     // (x/y/width/height above) follows the instance scale.
-    assert_eq!(text.font_size, Some(18.0));
+    assert_eq!(text.font_size_px(), Some(18.0));
     assert_eq!(text.line_height, Some(1.333));
     assert_eq!(text.letter_spacing, Some(3.0));
     let TextContent::Styled(runs) = &text.content else {

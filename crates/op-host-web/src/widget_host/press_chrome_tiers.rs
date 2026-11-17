@@ -75,10 +75,24 @@ impl WidgetHost {
                     StatusBarButton::ZoomIn => {
                         self.status_bar_zoom(true, viewport_width, viewport_height)
                     }
+                    StatusBarButton::Timeline => self.editor_state.toggle_motion_timeline(),
                 }
                 self.mark_dirty();
                 return Some(true);
             }
+        }
+
+        // Motion timeline, docked under the canvas between the rails.
+        if op_editor_ui::widgets::motion_timeline_flow::press(
+            &mut self.editor_state,
+            Point2D::new(x, y),
+            viewport_width,
+            viewport_height,
+            self.now_ms,
+            self.shift_held,
+        ) {
+            self.mark_dirty();
+            return Some(true);
         }
 
         // Chat paints after the TopBar. In a short maximized viewport the
@@ -180,6 +194,11 @@ impl WidgetHost {
                         } else if let Some(el) = doc.document_element() {
                             let _ = el.request_fullscreen();
                         }
+                    }
+                }
+                TopBarHit::ReplayMotion => {
+                    if let Some(preview) = self.preview.as_mut() {
+                        preview.replay_motion(self.now_ms);
                     }
                 }
                 TopBarHit::TogglePreview => {

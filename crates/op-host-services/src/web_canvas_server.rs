@@ -478,15 +478,15 @@ pub fn handle_web_canvas_request(
             // open), so the browser opens onto its canvas rather than Home.
             // `siteImport`: `/api/ai/site-import` is served (Home offers it).
             // `variants`: `/api/ai/standard` runs side-by-side directions.
-            // `generators`: `/api/generator/run` is served (every mode).
             body: format!(
-                r#"{{"running":true,"port":{},"localIp":"127.0.0.1","server":"openpencil-mcp","mode":"web-canvas","serveMode":"{}","fileBound":{},"siteImport":{},"variants":{},"generators":{}}}"#,
+                r#"{{"running":true,"port":{},"localIp":"127.0.0.1","server":"openpencil-mcp","mode":"web-canvas","serveMode":"{}","fileBound":{},"siteImport":{},"variants":{},"generators":{},"motionMp4":{}}}"#,
                 state.port,
                 state.mode.wire_name(),
                 state.current_path.is_some(),
                 state.mode.allows_site_import(),
                 state.mode.allows_design_variants(),
-                crate::generator_run_route::SERVED
+                crate::generator_run_route::SERVED,
+                crate::export::motion::mp4_available()
             ),
         },
         ("POST", "/api/mcp/server") => update_mcp_server_settings(body, state),
@@ -651,6 +651,7 @@ pub fn handle_web_canvas_request(
         ("POST", "/api/file/unbind") => unbind_current_file(state),
         ("POST", "/api/export/pdf") => export_pdf_download(body, state),
         ("POST", "/api/export/raster") => export_raster_download(body, state),
+        ("POST", "/api/export/motion") => export_motion_download(body, || state.editor.clone()),
         ("GET", "/api/ai/models") => WebReply {
             // JSON array of model ids the AI proxy can serve (the
             // configured built-in agents). The web bundle queries this
@@ -720,12 +721,11 @@ pub fn handle_web_canvas_request(
         _ => not_found_reply(),
     }
 }
-
 /// The daemon's canonical unknown-route reply.
 fn not_found_reply() -> WebReply {
     WebReply {
         status: "404 Not Found",
-        body: r#"{"ok":false,"error":"Not found. Use /api/mcp/document, /api/mcp/sync-reset, /api/mcp/server, /api/file/save, /api/export/raster, /api/export/pdf, or /mcp."}"#
+        body: r#"{"ok":false,"error":"Not found. Use /api/mcp/document, /api/mcp/sync-reset, /api/mcp/server, /api/file/save, /api/export/raster, /api/export/motion, /api/export/pdf, or /mcp."}"#
             .to_string(),
     }
 }

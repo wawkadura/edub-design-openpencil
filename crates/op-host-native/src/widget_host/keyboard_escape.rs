@@ -21,6 +21,12 @@ impl WidgetHostNative {
             self.mark_dirty();
             return true;
         }
+        // A timeline drag in flight (nothing is written), then the
+        // timeline's screen dropdown.
+        if escape::escape_motion_timeline(&mut self.editor_state) {
+            self.mark_dirty();
+            return true;
+        }
         // The result view is retired; the workspace is not a takeover,
         // so Escape in it walks the ordinary ladder (chat focus first,
         // then selection).
@@ -30,6 +36,15 @@ impl WidgetHostNative {
         // settings / sign-in modals Home opens are closed by their own
         // rungs further down this ladder.)
         if self.editor_state.editor_ui.home.visible {
+            let ui = &mut self.editor_state.editor_ui;
+            if !ui.agent_settings_open
+                && !ui.login_modal_open
+                && !ui.account_menu_open
+                && ui.escape_locale_picker()
+            {
+                self.mark_dirty();
+                return true;
+            }
             if self.editor_state.editor_ui.home.references_open {
                 self.editor_state
                     .apply_home_reference_action(op_editor_core::HomeHit::ReferencesClose);
@@ -308,6 +323,11 @@ impl WidgetHostNative {
             return true;
         }
         if self.editor_state.editor_ui.escape_component_browser() {
+            self.mark_dirty();
+            return true;
+        }
+        // Comment popover, then comment mode — one layer per press.
+        if op_editor_core::comment_ui::comment_escape(&mut self.editor_state) {
             self.mark_dirty();
             return true;
         }

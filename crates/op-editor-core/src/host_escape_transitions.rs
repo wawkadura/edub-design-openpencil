@@ -301,6 +301,7 @@ impl EditorUiState {
         self.effect_add_picker_open = false;
         self.effect_add_menu_hover = None;
         self.interaction_menu_open = false;
+        self.interaction_menu_target = None;
         self.interaction_menu_hover = None;
         self.close_color_variable_picker();
         self.image_fill_popover_open = false;
@@ -411,6 +412,15 @@ pub fn close_preview_owned_overlays(state: &mut EditorState, now_ms: u64) {
     state.ui.text_edit_input.reset_transient();
     state.chat.blur_input(now_ms);
     state.editor_ui.close_preview_owned_overlays();
+}
+
+/// Cancel an in-flight motion timeline drag (nothing is written; a
+/// resize snaps back), else close its screen dropdown.
+pub fn escape_motion_timeline(state: &mut EditorState) -> bool {
+    if state.cancel_motion_timeline_drag() {
+        return true;
+    }
+    std::mem::take(&mut state.editor_ui.motion_timeline.scope_menu_open)
 }
 
 /// Discard the focused property-panel draft.

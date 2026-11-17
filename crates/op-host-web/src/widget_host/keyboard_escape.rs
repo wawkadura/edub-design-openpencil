@@ -18,6 +18,12 @@ impl WidgetHost {
             self.mark_dirty();
             return true;
         }
+        // A timeline drag in flight (nothing is written), then the
+        // timeline's screen dropdown — native's rung, same place.
+        if escape::escape_motion_timeline(&mut self.editor_state) {
+            self.mark_dirty();
+            return true;
+        }
         // Slideshow presentation consumes Escape to exit. This must run
         // before all the property/panel/modal escapes so presentation gets
         // priority when it is active. Use the cached viewport dimensions,
@@ -41,6 +47,11 @@ impl WidgetHost {
         }
         // The property-panel image popover owns Escape before any stale input
         // underneath. Keep the image selected; only dismiss the top layer.
+        // Comment popover, then comment mode — one layer per press.
+        if op_editor_core::comment_ui::comment_escape(&mut self.editor_state) {
+            self.mark_dirty();
+            return true;
+        }
         if self.editor_state.editor_ui.image_panel.search_open
             || self.editor_state.editor_ui.image_panel.generate_open
         {
@@ -202,6 +213,13 @@ impl WidgetHost {
             return true;
         }
         if self.editor_state.editor_ui.escape_fill_type_picker() {
+            self.mark_dirty();
+            return true;
+        }
+        // Same tier as native's `keyboard_escape.rs`: one Escape closes
+        // the open Interactions dropdown and nothing else.
+        if self.editor_state.editor_ui.interaction_menu_open {
+            self.editor_state.editor_ui.close_interaction_menu();
             self.mark_dirty();
             return true;
         }

@@ -1,15 +1,19 @@
 use std::collections::BTreeMap;
+use std::io::Cursor;
 
 use base64::Engine as _;
-use op_editor_core::EditorState;
+use jian_ops_schema::{node::PenNode, PenDocument};
+use op_editor_core::{walkers::find_node, EditorState, NodeId};
 use op_editor_ui::layout_scene::LayoutScene;
 use op_mcp::{McpTool, ToolErrorCode, ToolOutcome};
+use op_render_export::motion::{export_motion, ClipTrigger, MotionExportOptions, MotionFormat};
 
 use crate::export::{render_node_on_page_raster_bytes, render_page_raster_bytes, RasterFormat};
 use crate::export_pdf::{render_node_on_page_pdf_bytes, render_page_pdf_bytes};
 
 pub struct ExportItem {
     scene: LayoutScene,
+    document: Option<PenDocument>,
     selected_node_id: Option<String>,
 }
 
@@ -24,7 +28,7 @@ impl McpTool for ExportItem {
             _ => {
                 return ToolOutcome::Err(
                     ToolErrorCode::MissingArgument,
-                    "format is required (png|jpeg|webp|pdf)".into(),
+                    "format is required (png|jpeg|webp|pdf|gif|apng|png-seq|mp4)".into(),
                 );
             }
         };
@@ -52,6 +56,9 @@ impl McpTool for ExportItem {
             .and_then(|value| value.trim().parse::<f32>().ok())
             .unwrap_or(1.0);
 
+        if let Some(motion) = parse_motion_format(format) {
+            return self.motion_export_response(args, item_id, format, motion, scale);
+        }
         let (bytes, item_type) = if let Some(page) =
             self.scene.pages.iter().find(|page| page.id == item_id)
         {
@@ -103,6 +110,150 @@ impl McpTool for ExportItem {
     }
 }
 
+impl ExportItem {
+    pub(super) fn motion_export_response(
+        &self,
+        args: &BTreeMap<String, String>,
+        item_id: &str,
+        format_name: &str,
+        format: MotionFormat,
+        scale: f32,
+    ) -> ToolOutcome {
+        match self.motion_bytes(args, item_id, format, scale) {
+            Ok(bytes) => ToolOutcome::OkJson(
+                serde_json::json!({
+                    "itemId": item_id,
+                    "itemType": "node",
+                    "format": format_name,
+                    "bytes_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+                })
+                .to_string(),
+            ),
+            Err((kind, message)) => ToolOutcome::Err(kind, message),
+        }
+    }
+
+    fn motion_bytes(
+        &self,
+        args: &BTreeMap<String, String>,
+        item_id: &str,
+        format: MotionFormat,
+        scale: f32,
+    ) -> Result<Vec<u8>, (ToolErrorCode, String)> {
+        let (node, scene) = self.motion_target(item_id)?;
+        let trigger = parse_motion_trigger(
+            args.get("trigger").map(String::as_str),
+            args.get("clip").map(String::as_str),
+        )?;
+        let fps = args
+            .get("fps")
+            .map(|value| value.parse::<u32>())
+            .transpose()
+            .map_err(|_| invalid("fps must be an integer"))?
+            .unwrap_or(30);
+        let duration_ms = args
+            .get("durationMs")
+            .map(|value| value.parse::<u64>())
+            .transpose()
+            .map_err(|_| invalid("durationMs must be a nonnegative integer"))?;
+        let background = args
+            .get("background")
+            .map(|value| {
+                serde_json::from_value(serde_json::Value::String(value.clone()))
+                    .map_err(|_| invalid("background must be transparent or white"))
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let reduced_motion = args
+            .get("reducedMotion")
+            .map(|value| value.parse::<bool>())
+            .transpose()
+            .map_err(|_| invalid("reducedMotion must be a boolean"))?;
+        let reduced_motion = self.document.as_ref().is_some_and(|document| {
+            op_editor_core::motion_export::export_reduced_motion(document, reduced_motion)
+        });
+        let options = MotionExportOptions {
+            trigger,
+            fps,
+            scale,
+            duration_ms,
+            background,
+            reduced_motion,
+            ..Default::default()
+        };
+        let mut output = Cursor::new(Vec::new());
+        export_motion(&mut output, &scene, node, format, &options)
+            .map_err(|error| (ToolErrorCode::ToolFailed, error.to_string()))?;
+        Ok(output.into_inner())
+    }
+    pub(super) fn motion_target(
+        &self,
+        item_id: &str,
+    ) -> Result<(&PenNode, LayoutScene), MotionToolError> {
+        let Some(document) = &self.document else {
+            return Err(invalid("motion export needs an authored document"));
+        };
+        let node_id = NodeId::new(item_id);
+        let Some(page) = self
+            .scene
+            .pages
+            .iter()
+            .find(|page| page.find(item_id).is_some())
+        else {
+            return Err(invalid(
+                "motion export requires a node id on the Live Canvas",
+            ));
+        };
+        let children = document
+            .pages
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .find(|candidate| candidate.id == page.id)
+            .map_or(document.children.as_slice(), |page| &page.children);
+        let Some(node) = find_node(children, &node_id) else {
+            return Err(invalid("motion export requires an authored node"));
+        };
+        let scene = LayoutScene {
+            pages: vec![page.clone()],
+            active_page_index: 0,
+        };
+        Ok((node, scene))
+    }
+}
+
+pub(super) type MotionToolError = (ToolErrorCode, String);
+
+fn invalid(message: &str) -> MotionToolError {
+    (ToolErrorCode::InvalidArgument, message.to_owned())
+}
+
+pub(super) fn parse_motion_trigger(
+    trigger: Option<&str>,
+    clip: Option<&str>,
+) -> Result<ClipTrigger, MotionToolError> {
+    match (trigger, clip) {
+        (None | Some("manual"), Some(id)) if !id.trim().is_empty() => {
+            Ok(ClipTrigger::Manual(id.into()))
+        }
+        (None | Some("mount"), None) => Ok(ClipTrigger::Mount),
+        (Some("inView"), None) => Ok(ClipTrigger::InView),
+        _ => Err(invalid(
+            "trigger must be mount, inView, or manual with a clip id",
+        )),
+    }
+}
+
+pub(super) fn parse_motion_format(format: &str) -> Option<MotionFormat> {
+    Some(match format {
+        "gif" => MotionFormat::Gif,
+        "apng" => MotionFormat::Apng,
+        "png-seq" => MotionFormat::PngSequence,
+        "mp4" => MotionFormat::Mp4,
+        _ => return None,
+    })
+}
+
 fn canonical_format(format: &str) -> &str {
     if format == "jpg" {
         "jpeg"
@@ -114,13 +265,16 @@ fn canonical_format(format: &str) -> &str {
 fn unsupported_format(format: &str) -> ToolOutcome {
     ToolOutcome::Err(
         ToolErrorCode::InvalidArgument,
-        format!("unknown format {format:?}: must be one of png, jpeg, webp, pdf"),
+        format!(
+            "unknown format {format:?}: must be one of png, jpeg, webp, pdf, gif, apng, png-seq, mp4"
+        ),
     )
 }
 
 pub fn export_item_snapshot(state: &EditorState) -> ExportItem {
     ExportItem {
         scene: op_pen_loader::editor_state_to_layout_scene(state),
+        document: Some(state.doc.clone()),
         selected_node_id: state
             .selection
             .anchor
@@ -138,6 +292,33 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::export::test_support::filled_rect;
+
+    #[test]
+    fn exports_a_named_clip_through_the_live_canvas_tool() {
+        let document = jian_ops_schema::load_str(
+            r##"{"version":"1.1","children":[{"type":"rectangle","id":"box","width":20,"height":12,
+            "fill":[{"type":"solid","color":"#cc5544"}],"animations":[{
+              "trigger":"manual","id":"fade","durationMs":100,"easing":"linear",
+              "keyframes":[{"offset":0,"values":{"opacity":0}},{"offset":1,"values":{"opacity":1}}]}]}]}"##,
+        ).unwrap().value;
+        let state = EditorState::from_document(document);
+        let args = BTreeMap::from([
+            ("itemId".into(), "box".into()),
+            ("format".into(), "apng".into()),
+            ("clip".into(), "fade".into()),
+            ("fps".into(), "24".into()),
+        ]);
+        let outcome = export_item_snapshot(&state).call(&args);
+        let ToolOutcome::OkJson(payload) = outcome else {
+            panic!("motion export failed: {outcome:?}");
+        };
+        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(payload["bytes_base64"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(payload["format"], "apng");
+        assert!(bytes.windows(4).any(|chunk| chunk == b"acTL"));
+    }
 
     fn two_page_scene() -> LayoutScene {
         LayoutScene {
@@ -174,6 +355,7 @@ mod tests {
     fn tool_from_scene(scene: LayoutScene, selected_node_id: Option<String>) -> ExportItem {
         ExportItem {
             scene,
+            document: None,
             selected_node_id,
         }
     }

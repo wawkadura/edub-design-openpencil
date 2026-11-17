@@ -43,7 +43,7 @@ Fill = [{ type: "solid", color: "#hex" }] or [{ type: "linear_gradient", angle, 
 Linear angle: 0° bottom→top, 90° left→right, 180° top→bottom. A bottom scrim uses 180°, transparent to dark; keep overlay text on its dark end.
 - radial_gradient: `fill: [{ type: "radial_gradient", cx: 0.5, cy: 0.5, radius: 0.7, stops: [{ offset: 0, color: "#6d28d9" }, { offset: 1, color: "#0b0614" }] }]` — cx/cy: 0..1 center; radius: fraction of max(w,h).
 - mesh_gradient: `fill: [{ type: "mesh_gradient", rows: 2, cols: 2, stops: [{ row: 0, col: 0, color: "#ec4899" }, { row: 0, col: 1, color: "#8b5cf6" }, { row: 1, col: 0, color: "#3b82f6" }, { row: 1, col: 1, color: "#06b6d4" }] }]` — a Gouraud-interpolated rows×cols grid with vertex colors at (row,col).
-- shader fill (advanced, generative surfaces): raw `sksl` or a built-in `preset`, render-only; see `shader-fill`. PREFER mesh/linear gradients unless intent is explicitly generative; failed raw shaders degrade to a flat solid.
+- shader fill (advanced, generative surfaces): raw `sksl` or a built-in `preset`, render-only; see `shader-fill`. PREFER mesh/linear gradients unless intent is explicitly generative; failed raw shaders degrade to a flat solid. Reserved uniforms: `size` (node px) and `time` (seconds; declaring `uniform float time;` animates the fill on canvas, exports render `time = 0`).
 - turbulence preset example: `fill: [{ type: "shader", preset: "turbulence", uniforms: { baseFrequency: 0.08, seed: 0, numOctaves: 3 } }]`
 - Gradient stops use `offset` (0..1 position) and `color` (hex). Never write `pos`.
 - text nodes' `content` is ALWAYS a string — never a number, boolean, or null.
@@ -56,4 +56,4 @@ PADDING: number (uniform), [v, h], or [top, right, bottom, left].
 cornerRadius is a number. fill is ALWAYS an array. Do NOT set x/y on children inside layout frames.
 
 - Motion: document `motion` is `"full"|"reduced"`; nodes may declare `transition` and `animations` with camelCase fields, M3 easing names, and registry-property keyframes (during `delayMs` the node shows keyframe 0), e.g. `animations:[{trigger:"mount",durationMs:400,easing:"emphasizedDecelerate",keyframes:[{offset:0,values:{opacity:0,translateY:16}},{offset:1,values:{opacity:1,translateY:0}}]}]`.
-- Motion properties are compositor-safe: prefer `opacity`, `translateX/Y`, `scaleX/Y`, `rotation`, `fill`, `stroke`, and `cornerRadius`; keep `mount` and `inView` as time triggers, not scroll timelines.
+- Motion properties are compositor-safe: prefer `opacity`, `translateX/Y`, `scaleX/Y`, `rotation`, `fill`, `stroke`, and `cornerRadius`; see the motion recipe for named clips and navigation transitions.

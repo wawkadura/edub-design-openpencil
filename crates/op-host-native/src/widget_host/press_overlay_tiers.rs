@@ -76,6 +76,12 @@ impl WidgetHostNative {
             self.close_image_popovers_for_higher_overlay();
             return Some(true);
         }
+        // Comment popover — painted at the bottom of the top-most band, so
+        // it hit-tests right after the notices above it. Only presses on the
+        // card are consumed.
+        if self.press_comment_popover(x, y) {
+            return Some(true);
+        }
         // Floating Design-MD panel — painted top-most (`paint.rs`
         // §12), so it hit-tests first: a click on its rect is the
         // panel's before any lower layer can claim it (dispatch in
@@ -257,7 +263,15 @@ impl WidgetHostNative {
         }
         if self.editor_state.editor_ui.export_dialog_open {
             self.close_image_popovers_for_higher_overlay();
-            self.dispatch_export_dialog_press(x, y, viewport_width, viewport_height);
+            if !op_editor_ui::widgets::ExportDialog::press_for_editor(
+                &mut self.editor_state,
+                Point2D::new(x, y),
+                viewport_width,
+                viewport_height,
+            ) {
+                self.blur_text_inputs_on_blank_press();
+            }
+            self.mark_dirty();
             return Some(true);
         }
         if self.editor_state.editor_ui.figma_import_open {
@@ -313,6 +327,15 @@ impl WidgetHostNative {
         }
 
         // 0a. Locale picker overlay — top-most when open.
+        self.press_locale_picker_overlay(x, y, viewport_width)
+    }
+
+    pub(in crate::widget_host) fn press_locale_picker_overlay(
+        &mut self,
+        x: f32,
+        y: f32,
+        viewport_width: f32,
+    ) -> Option<bool> {
         if self.editor_state.editor_ui.locale_picker.open {
             self.refresh_layout_scene();
             let panel_rect = self.locale_picker_rect(viewport_width);

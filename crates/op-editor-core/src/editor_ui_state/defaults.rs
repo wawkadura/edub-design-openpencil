@@ -24,6 +24,7 @@ impl Default for EditorUiState {
             touch: false,
             keyboard_occlusion: 0.0,
             external_cli_available: true,
+            native_touch_dock: false,
             mobile_sheet: None,
             theme_mode: ThemeMode::Dark,
             host_theme_override: None,
@@ -52,6 +53,7 @@ impl Default for EditorUiState {
             document_dirty: false,
             reduced_motion: false,
             export_scale: 2.0,
+            motion_export: Default::default(),
             export_dialog_open: false,
             export_dialog_hover: None,
             export_format: ExportFormat::Png,
@@ -78,6 +80,8 @@ impl Default for EditorUiState {
             preserve_authored_geometry: false,
             scenario: None,
             preview: PreviewState::default(),
+            motion_timeline: super::MotionTimelineState::default(),
+            motion_expanded: None,
             slides_panel: super::SlidesPanelState::default(),
             agent_settings_open: false,
             agent_settings: crate::agent_settings::AgentSettings::default(),
@@ -146,6 +150,7 @@ impl Default for EditorUiState {
             effect_add_picker_open: false,
             effect_add_menu_hover: None,
             interaction_menu_open: false,
+            interaction_menu_target: None,
             interaction_menu_hover: None,
             property_color_variable_picker_open: None,
             image_fill_popover_open: false,
@@ -219,6 +224,7 @@ impl Default for EditorUiState {
             last_variable_name_click: None,
             active_guides: Vec::new(),
             pencil_cursor_style: PencilCursorStyle::default(),
+            agent_swarm_enabled: false,
             starter_ghost: None,
             canvas_drop_indicator: None,
             update_status: UpdateStatus::Idle,
@@ -240,6 +246,7 @@ impl Default for EditorUiState {
             component_browser_kit_request: None,
             ui_kits_changed: false,
             component_browser_pending_insert: None,
+            comments: Default::default(),
         }
     }
 }

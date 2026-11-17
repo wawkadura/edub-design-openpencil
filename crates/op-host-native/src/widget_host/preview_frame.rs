@@ -39,6 +39,7 @@ impl super::WidgetHostNative {
     pub(crate) fn clear_device_preview_state(&mut self) {
         self.preview_device_frame = None;
         self.preview_scroll_y = 0.0;
+        self.sync_in_view_viewport();
         self.preview_manual_pick = None;
         self.preview_surface_capture = None;
     }
@@ -92,6 +93,26 @@ impl super::WidgetHostNative {
 
     /// Rebuild the cached frame from the current session and viewport.
     pub(crate) fn recompute_device_frame(&mut self, viewport_w: f32, viewport_h: f32) {
+        self.recompute_device_frame_geometry(viewport_w, viewport_h);
+        self.sync_in_view_viewport();
+    }
+
+    /// Hand the device frame's visible window to in-view motion triggers,
+    /// which otherwise treat the whole grown page root as visible.
+    fn sync_in_view_viewport(&mut self) {
+        let scroll_y = self.preview_scroll_y;
+        let changed = match self.preview.as_mut() {
+            Some(session) => {
+                session.sync_in_view_viewport(self.preview_device_frame.as_ref(), scroll_y)
+            }
+            None => false,
+        };
+        if changed {
+            self.mark_dirty();
+        }
+    }
+
+    fn recompute_device_frame_geometry(&mut self, viewport_w: f32, viewport_h: f32) {
         if !self.device_mode_active() {
             self.preview_device_frame = None;
             return;
@@ -105,7 +126,7 @@ impl super::WidgetHostNative {
             self.preview_device_frame = None;
             return;
         }
-        let canvas = Rect {
+        let full_canvas = Rect {
             origin: Point2D::new(canvas_x, canvas_y),
             size: Point2D::new(canvas_w, canvas_h),
         };
@@ -113,6 +134,13 @@ impl super::WidgetHostNative {
             self.preview_device_frame = None;
             return;
         };
+        // Fit the frame BELOW the floating switcher rows and clear of the
+        // floating chat, instead of under them (shared with web/native).
+        let canvas = op_editor_ui::widgets::preview_frame_area(
+            full_canvas,
+            session.is_app_mode(),
+            self.preview_chat_obstacle(viewport_w, viewport_h),
+        );
         let Some((_root_id, root_rect)) = session.framed_root() else {
             self.preview_device_frame = Some(compute_frame_geometry(
                 kind,
@@ -127,26 +155,10 @@ impl super::WidgetHostNative {
             self.preview_scroll_y = 0.0;
             return;
         };
-        let is_phone = kind == PreviewDeviceKind::Phone;
-        let nav = session.pinned_nav_candidate(is_phone);
-        let status = session.pinned_status_bar_candidate(is_phone);
-        let mut frame = compute_frame_geometry(
-            kind,
-            canvas,
-            root_rect,
-            nav.as_ref().map(|(_, rect)| *rect),
-            status.as_ref().map(|(_, rect)| *rect),
-        );
-        if let (Some(pinned), Some((node_id, _))) = (frame.pinned.as_mut(), nav) {
-            pinned.node_id = node_id;
-        }
-        if let (Some(pinned_top), Some((node_id, _))) = (frame.pinned_top.as_mut(), status) {
-            pinned_top.node_id = node_id;
-        }
-        let max = scroll_max(&frame);
-        self.preview_scroll_y = self.preview_scroll_y.clamp(0.0, max);
+        let frame = session.device_frame_geometry(kind, canvas, root_rect);
+        self.preview_scroll_y = self.preview_scroll_y.clamp(0.0, scroll_max(&frame));
         self.preview_device_frame = Some(frame);
-        self.sync_page_scroll(max, 0.0);
+        self.sync_page_scroll(0.0);
     }
 
     /// Apply a screen-pixel scroll delta to logical frame content.
@@ -154,26 +166,31 @@ impl super::WidgetHostNative {
         let Some(frame) = self.preview_device_frame.as_ref() else {
             return;
         };
-        let max = scroll_max(frame);
-        let next = (self.preview_scroll_y - screen_delta_y / frame.fit).clamp(0.0, max);
+        let next =
+            (self.preview_scroll_y - screen_delta_y / frame.fit).clamp(0.0, scroll_max(frame));
         if (next - self.preview_scroll_y).abs() > f32::EPSILON {
             self.preview_scroll_y = next;
             self.mark_dirty();
         }
-        self.sync_page_scroll(max, screen_delta_y);
+        self.sync_page_scroll(screen_delta_y);
+        self.sync_in_view_viewport();
     }
 
     /// Feed the device frame's scroll position into the session so
     /// `$scroll` bindings under the framed root track the page scroll
-    /// (page-scroll contract). Repaints when a bound value moved even
-    /// if the offset itself did not (a new `max_offset` changes
+    /// (page-scroll contract; the offset/extent derivation is shared via
+    /// `PreviewSession::set_device_page_scroll`, the web host's twin
+    /// calls the same). Repaints when a bound value moved even if the
+    /// offset itself did not (a new `max_offset` changes
     /// `$scroll.progress`).
-    fn sync_page_scroll(&mut self, max_offset: f32, delta_y: f32) {
-        let offset = self.preview_scroll_y;
-        let changed = self
-            .preview
-            .as_mut()
-            .is_some_and(|session| session.set_page_scroll(offset, max_offset, delta_y));
+    fn sync_page_scroll(&mut self, delta_y: f32) {
+        let scroll_y = self.preview_scroll_y;
+        let changed = match (self.preview.as_mut(), self.preview_device_frame.as_ref()) {
+            (Some(session), Some(frame)) => {
+                session.set_device_page_scroll(frame, scroll_y, delta_y)
+            }
+            _ => false,
+        };
         if changed {
             self.mark_dirty();
         }
@@ -247,28 +264,15 @@ impl super::WidgetHostNative {
         let interpolated;
         let (device_frame, chrome_blend): (&DeviceFrame, f32) = match active_mode_transition {
             Some(transition) => {
-                let is_phone = steady_frame.kind == PreviewDeviceKind::Phone;
-                let nav = session.pinned_nav_candidate(is_phone);
-                let status = session.pinned_status_bar_candidate(is_phone);
                 let root_rect = session
                     .framed_root()
                     .map(|(_, rect)| rect)
                     .unwrap_or(steady_frame.frame);
-                let mut frame = compute_frame_geometry(
+                interpolated = session.device_frame_geometry(
                     steady_frame.kind,
                     transition.canvas_rect_for_frame(self.now_ms),
                     root_rect,
-                    nav.as_ref().map(|(_, rect)| *rect),
-                    status.as_ref().map(|(_, rect)| *rect),
                 );
-                if let (Some(pinned), Some((node_id, _))) = (frame.pinned.as_mut(), nav) {
-                    pinned.node_id = node_id;
-                }
-                if let (Some(pinned_top), Some((node_id, _))) = (frame.pinned_top.as_mut(), status)
-                {
-                    pinned_top.node_id = node_id;
-                }
-                interpolated = frame;
                 (&interpolated, transition.chrome_blend(self.now_ms))
             }
             None => (steady_frame, 1.0),

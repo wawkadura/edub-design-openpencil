@@ -317,10 +317,22 @@ impl Widget for PropertyPanel {
             );
         }
         if caps.interactions {
+            y = crate::widgets::property_panel_motion::paint_motion_section(
+                cx,
+                &self.theme,
+                &self.snapshot.interactions.motion,
+                &edit_ctx,
+                self.locale,
+                x,
+                y,
+                w,
+            );
             y = sections::paint_interactions_section(
                 cx,
                 &self.theme,
                 &self.snapshot.interactions,
+                &self.interaction_ctx,
+                &edit_ctx,
                 self.locale,
                 x,
                 y,
@@ -401,18 +413,13 @@ impl Widget for PropertyPanel {
                 );
             }
         }
-        // Interactions section's Navigate/Back/Remove popover.
+        // Interactions section's dropdown menu.
         if caps.interactions && self.interaction_menu_open {
-            if let Some(anchor) = self.interaction_menu_anchor_rect(scrolled) {
-                let rows = crate::widgets::property_panel_interactions::interaction_menu_rows(
-                    self.locale,
-                    &self.screen_paths,
-                    self.interaction_menu_removable(),
-                );
+            if let Some((menu, rows)) = self.interaction_menu_layout(rect) {
                 crate::widgets::property_panel_interactions::paint_interaction_menu(
                     cx,
                     &self.theme,
-                    anchor,
+                    menu,
                     &rows,
                     self.interaction_menu_hover,
                 );

@@ -334,6 +334,24 @@ pub(super) fn dispatch<S: Read + Write>(
         crate::mcp_serve::write_mcp_http_response_with_origin(stream, status, &body, cors_origin)?;
         return Ok(false);
     }
+    if req.method == "POST" && req.path == "/api/export/motion" {
+        // Multi-frame encoding can outlive a browser poll. Use the request's
+        // document, or take a snapshot before rendering without the tenant lock.
+        let reply = super::export_routes::export_motion_download(&req.body, || {
+            state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .editor
+                .clone()
+        });
+        crate::mcp_serve::write_mcp_http_response_with_origin(
+            stream,
+            reply.status,
+            &reply.body,
+            cors_origin,
+        )?;
+        return Ok(false);
+    }
     // All `/api/mcp/*` REST paths go to the REST handler — including ones this
     // daemon doesn't implement yet, which it answers with 404 rather than
     // mis-routing them into the JSON-RPC dispatch below.
@@ -421,7 +439,7 @@ pub(super) fn dispatch<S: Read + Write>(
         crate::mcp_serve::write_mcp_http_response_with_origin(
             stream,
             "404 Not Found",
-            r#"{"ok":false,"error":"Not found. Use /, /pkg/*, /api/mcp/document, /api/mcp/sync-reset, /api/mcp/server, /api/mcp/events, /api/file/save, /api/export/raster, /api/export/pdf, /mcp, or /mcp/lean."}"#,
+            r#"{"ok":false,"error":"Not found. Use /, /pkg/*, /api/mcp/document, /api/mcp/sync-reset, /api/mcp/server, /api/mcp/events, /api/file/save, /api/export/raster, /api/export/motion, /api/export/pdf, /mcp, or /mcp/lean."}"#,
             cors_origin,
         )?;
         return Ok(false);
@@ -557,16 +575,17 @@ pub(super) fn dispatch<S: Read + Write>(
             &mut guard.editor,
             &req.body,
             mcp_profile,
-            |_tool_name, editor, cmd| {
+            |tool_name, editor, cmd| {
                 if let Err(reason) =
                     policy.check_command(cmd, op_editor_core::CollabEditSource::Mcp)
                 {
                     refused = Some(reason);
                     return false;
                 }
+                let repair_scope = crate::mcp_serve::mobile_repair_scope(tool_name, editor);
                 let ok = editor.apply(cmd.clone());
                 if ok {
-                    crate::mcp_serve::run_write_repairs_after_apply(editor);
+                    crate::mcp_serve::run_write_repairs_after_apply(editor, &repair_scope);
                 }
                 applied_any |= ok;
                 ok

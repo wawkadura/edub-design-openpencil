@@ -63,6 +63,7 @@ impl WidgetHostNative {
                     StatusBarButton::ZoomIn => {
                         self.status_bar_zoom(true, viewport_width, viewport_height)
                     }
+                    StatusBarButton::Timeline => self.editor_state.toggle_motion_timeline(),
                 }
                 self.mark_dirty();
                 return Some(true);
@@ -89,6 +90,22 @@ impl WidgetHostNative {
                 });
                 return Some(true);
             }
+        }
+
+        // Motion timeline, docked under the canvas between the rails. After
+        // the resize gutter, whose band overlaps the panel's edges.
+        if !in_git_panel
+            && op_editor_ui::widgets::motion_timeline_flow::press(
+                &mut self.editor_state,
+                Point2D::new(x, y),
+                viewport_width,
+                viewport_height,
+                self.now_ms,
+                self.shift_held,
+            )
+        {
+            self.mark_dirty();
+            return Some(true);
         }
 
         // Chat paints after the TopBar. A short/top-anchored chat can lift the
@@ -194,6 +211,13 @@ impl WidgetHostNative {
                     // The widget host doesn't own the winit window — raise
                     // an intent the desktop runner consumes next frame.
                     self.editor_state.editor_ui.pending_fullscreen_toggle = true;
+                    self.mark_dirty();
+                    return Some(true);
+                }
+                TopBarHit::ReplayMotion => {
+                    if let Some(preview) = self.preview.as_mut() {
+                        preview.replay_motion(self.now_ms);
+                    }
                     self.mark_dirty();
                     return Some(true);
                 }
@@ -358,7 +382,7 @@ impl WidgetHostNative {
         &mut self,
         ctx: &PressCtx,
     ) -> Option<bool> {
-        if self.preview_slideshow_active() {
+        if self.editor_state.editor_ui.native_touch_dock || self.preview_slideshow_active() {
             return None;
         }
         let point = Point2D::new(ctx.x, ctx.y);
@@ -369,20 +393,7 @@ impl WidgetHostNative {
             ctx.viewport_height,
         );
         let hit = dock.hit_test(dock_rect, point)?;
-        match hit {
-            op_editor_ui::widgets::MobileDockHit::Tool(tool) => {
-                self.editor_state.tool = tool;
-            }
-            op_editor_ui::widgets::MobileDockHit::ShapeSlot => {
-                op_editor_core::host_press_transitions::toggle_shape_picker(
-                    &mut self.editor_state.editor_ui,
-                );
-            }
-            op_editor_ui::widgets::MobileDockHit::More => {
-                self.toggle_mobile_sheet(op_editor_core::size_class::MobileSheetKind::More);
-            }
-        }
-        self.mark_dirty();
+        self.dispatch_mobile_dock_hit(hit);
         Some(true)
     }
 

@@ -169,6 +169,7 @@ mod missing_fonts_dispatch;
 #[cfg(test)]
 mod mobile_touch_tests;
 mod mode_transition_host;
+mod motion_timeline_host;
 #[cfg(test)]
 mod overlay_cursor_tests;
 mod overlay_rects;
@@ -203,6 +204,7 @@ mod preview_asset_sync_tests;
 mod preview_edge_swipe;
 #[cfg(all(test, not(target_os = "windows")))]
 mod preview_edge_swipe_tests;
+mod preview_effects;
 mod preview_frame;
 #[cfg(test)]
 #[cfg(all(test, not(target_os = "windows")))]
@@ -268,6 +270,9 @@ mod studio_focus;
 mod text_edit_press;
 // Windows CI DirectWrite/Skia text layout aborts inside these text-edit
 // fixtures before Rust can report an assertion. macOS + Linux keep coverage.
+mod comments;
+#[cfg(test)]
+mod comments_tests;
 #[cfg(all(test, not(target_os = "windows")))]
 mod text_edit_press_tests;
 #[cfg(test)]
@@ -500,6 +505,10 @@ pub struct WidgetHostNative {
     /// skip); the animation scheduler wakes at the deadline so the
     /// gesture-end frame repaints at full quality.
     pub(in crate::widget_host) interaction_hot_until_ms: u64,
+    /// The last painted canvas still shows interactive-degrade output
+    /// (no layer blur): the scheduler keeps a wake pending until a
+    /// full-quality frame replaces it (issue #271).
+    pub(in crate::widget_host) degraded_canvas_on_screen: bool,
     /// Offscreen canvas layer serving pure-pan frames during a live
     /// gesture. See `widget_host/canvas_pan_cache.rs`.
     pub(in crate::widget_host) pan_cache: Option<canvas_pan_cache::CanvasPanCache>,
