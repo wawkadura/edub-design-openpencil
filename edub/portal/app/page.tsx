@@ -1,6 +1,7 @@
 import { upsertUser, visibleFiles, type VisibleFile } from "@/lib/access.ts";
 import { currentIdentity } from "@/lib/current-user.ts";
 import { canUseDesign, isAdmin } from "@/lib/identity.ts";
+import { EditorDefaults } from "./editor-defaults.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function Home() {
 
   return (
     <main className="shell">
+      <EditorDefaults />
       {identity.impersonated ? (
         <div className="dev-banner">DEV : impersonation de « {identity.username} » ({identity.groups.join(", ") || "aucun groupe"})</div>
       ) : null}
