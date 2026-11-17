@@ -14,7 +14,8 @@
     "test": "tsx --test lib/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "e2e": "tsx scripts/e2e-rights.mts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

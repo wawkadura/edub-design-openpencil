@@ -1,38 +1,29 @@
-import { upsertUser, visibleFiles, type VisibleFile } from "@/lib/access.ts";
-import { currentIdentity } from "@/lib/current-user.ts";
-import { canUseDesign, isAdmin } from "@/lib/identity.ts";
+import Link from "next/link";
+import { visibleProjects } from "@/lib/access.ts";
+import { isAdmin } from "@/lib/identity.ts";
+import { pageAuth, ROLE_LABEL } from "@/lib/page-auth.ts";
 import { EditorDefaults } from "./editor-defaults.tsx";
+import { NewProjectButton } from "./_components/new-project.tsx";
+import { Thumb } from "./_components/thumb.tsx";
 
 export const dynamic = "force-dynamic";
 
-const ROLE_LABEL = { owner: "Propriétaire", editor: "Éditeur", viewer: "Lecteur" } as const;
-
-function editorHref(file: VisibleFile): string {
-  return `/editor?tenant=${file.tenantId}`;
-}
+const initials = (s: string) => s.slice(0, 2).toUpperCase();
 
 export default async function Home() {
-  const identity = await currentIdentity();
-  if (!identity) {
+  const auth = await pageAuth();
+  if ("message" in auth) {
     return (
       <main className="shell">
         <h1>Edub Design</h1>
-        <p className="muted">Identité absente : cette page doit être servie derrière Authelia.</p>
+        <p className="muted">{auth.message}</p>
       </main>
     );
   }
-  if (!canUseDesign(identity)) {
-    return (
-      <main className="shell">
-        <h1>Edub Design</h1>
-        <p className="muted">Ton compte ({identity.username}) n&apos;a pas accès à Edub Design. Demande à Walid.</p>
-      </main>
-    );
-  }
-  await upsertUser(identity);
-  const files = await visibleFiles(identity);
-  const byProject = new Map<string, VisibleFile[]>();
-  for (const f of files) byProject.set(f.projectName, [...(byProject.get(f.projectName) ?? []), f]);
+  const { identity } = auth;
+  const cards = await visibleProjects(identity);
+  const admin = isAdmin(identity);
+  const archived = admin ? await visibleProjects(identity, { archived: true }) : [];
 
   return (
     <main className="shell">
@@ -42,37 +33,56 @@ export default async function Home() {
       ) : null}
       <header className="top">
         <div>
-          <h1>Edub Design</h1>
-          <p className="muted">Le lieu commun de design des apps Edub. Version provisoire.</p>
+          <h1>Mes projets</h1>
+          <p className="muted">Edub Design — tu ne vois que les projets qui te sont ouverts.</p>
         </div>
         <div className="who">
           <span>{identity.displayName ?? identity.username}</span>
-          {isAdmin(identity) ? <span className="chip">admin</span> : null}
+          {admin ? <span className="chip">admin</span> : null}
+          {admin ? <NewProjectButton /> : null}
         </div>
       </header>
 
-      {files.length === 0 ? (
+      {cards.length === 0 ? (
         <p className="muted">Aucun projet ne t&apos;est ouvert pour l&apos;instant.</p>
       ) : (
-        [...byProject.entries()].map(([project, list]) => (
-          <section key={project} className="project">
-            <h2>{project}</h2>
-            <ul className="files">
-              {list.map((f) => (
-                <li key={f.id} className="file">
-                  <div>
-                    <div className="file-name">{f.name}</div>
-                    <div className="muted small">{ROLE_LABEL[f.role]}</div>
+        <ul className="project-grid">
+          {cards.map((c) => (
+            <li key={c.project.id} className="project-card" style={{ borderTopColor: c.project.color ?? "var(--accent)" }}>
+              <Link href={`/p/${c.project.slug}`} className="card-link">
+                <Thumb fileId={c.latestFile?.id ?? null} label={c.project.emoji ?? "◻"} />
+                <div className="card-body">
+                  <div className="card-title">
+                    <span>{c.project.emoji ?? "📁"}</span> {c.project.name}
                   </div>
-                  <a className="open" href={editorHref(f)}>
-                    Ouvrir l&apos;éditeur
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+                  {c.project.description ? <div className="muted small clamp">{c.project.description}</div> : null}
+                  <div className="muted small">
+                    {c.fileCount} fichier{c.fileCount > 1 ? "s" : ""} · {c.screenCount} écran{c.screenCount > 1 ? "s" : ""} · {ROLE_LABEL[c.role]}
+                  </div>
+                  <div className="avatars" aria-label="Membres">
+                    {c.members.slice(0, 5).map((m) => (
+                      <span key={m.principalKind + m.principal} className={`avatar ${m.principalKind}`} title={`${m.principal} (${m.principalKind === "group" ? "groupe" : "utilisateur"})`}>
+                        {initials(m.principal)}
+                      </span>
+                    ))}
+                    {c.members.length > 5 ? <span className="avatar more">+{c.members.length - 5}</span> : null}
+                  </div>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
+      {archived.length ? (
+        <section className="project">
+          <h2>Archivés</h2>
+          <ul className="archived">
+            {archived.map((c) => (
+              <li key={c.project.id}><Link href={`/p/${c.project.slug}`}>{c.project.emoji} {c.project.name}</Link></li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </main>
   );
 }

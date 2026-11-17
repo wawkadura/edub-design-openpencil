@@ -46,8 +46,11 @@ export function identityFromHeaders(
   headers: HeaderSource,
   opts: { production: boolean; devUser?: string | undefined },
 ): Identity | null {
-  if (!opts.production && opts.devUser) {
-    return parseDevUser(opts.devUser);
+  if (!opts.production) {
+    // Dev/test only: per-request impersonation header (end-to-end tests), then the env default.
+    const perRequest = headers.get("x-edub-dev-user");
+    if (perRequest) return parseDevUser(perRequest);
+    if (opts.devUser) return parseDevUser(opts.devUser);
   }
   const username = headers.get("remote-user")?.trim() ?? "";
   if (!USERNAME_RE.test(username)) return null;

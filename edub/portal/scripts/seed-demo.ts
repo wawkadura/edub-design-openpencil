@@ -3,13 +3,14 @@
  * document is the upstream sample `lumina-landing.op`. Run by edub/scripts/deploy.sh.
  */
 import { config } from "dotenv";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "../lib/db/schema.ts";
 import { newTenantId, tenantDocumentPath } from "../lib/tenant-store.ts";
+import { authorFor, commitFile } from "../lib/versioning.ts";
 
 config({ path: ".env.local", quiet: true });
 const url = process.env.EDUB_DESIGN_DATABASE_URL;
@@ -40,5 +41,8 @@ if (!existsSync(target)) {
   copyFileSync(path.resolve("../../lumina-landing.op"), target);
   console.log(`demo document written for ${file.tenantId}`);
 }
+// First version in the project's git history (no-op when already committed).
+const projectsDir = process.env.EDUB_DESIGN_PROJECTS_DIR ?? path.join(path.dirname(dataDir), "projects");
+await commitFile(projectsDir, project.slug, file.id, readFileSync(target, "utf8"), authorFor("edub-design"), "création : Lumina landing");
 console.log(`demo OK: /editor?tenant=${file.tenantId}`);
 await pool.end();

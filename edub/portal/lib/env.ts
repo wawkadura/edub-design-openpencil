@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 /** Read a required env var; throws a clear error at first use instead of failing obscurely. */
 export function requireEnv(name: string): string {
@@ -27,6 +28,10 @@ export const env = {
   },
   get editorDataDir() {
     return process.env.EDUB_DESIGN_EDITOR_DATA_DIR ?? "";
+  },
+  /** Git-versioned project trees (`<dir>/<slug>/<fileId>.op`). Default: sibling of the editor store. */
+  get projectsDir() {
+    return process.env.EDUB_DESIGN_PROJECTS_DIR ?? path.join(path.dirname(process.env.EDUB_DESIGN_EDITOR_DATA_DIR ?? "/tmp/edub-design/editor"), "projects");
   },
 };
 

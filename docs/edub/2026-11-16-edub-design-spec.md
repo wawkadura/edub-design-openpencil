@@ -59,30 +59,42 @@ Pourquoi c'est le plus simple qui tienne les 3 besoins :
 - L'accueil du portail pré-remplit, **si absents**, les réglages locaux de l'éditeur (`localStorage['openpencil-rust-web-settings::anon']`, `app/editor-defaults.tsx`) : interface en français, ouverture directe sur le canevas (sinon : Studio Home en chinois). Un choix fait ensuite dans l'éditeur n'est jamais écrasé.
 - Bruit attendu dans la console : `GET /api/auth/status` → 403 (login device fermé ; l'éditeur reste en compte anonyme local, sans effet).
 
-## 4. Modèle de droits
+## 4. Modèle de droits (ED_1729)
 
 Tables (`edub/portal/lib/db/schema.ts`, migrations `edub/portal/drizzle/`) :
 
-- `user` : miroir upserté de l'identité Authelia (`username` unique, nom, email, groupes, `last_seen_at`). Aucune donnée d'authentification.
-- `project` : une app (slug, nom). `project_member(project_id, user_id, role)` avec `role ∈ owner | editor | viewer`.
-- `design_file` : `project_id`, `name`, `tenant_id` (`f_<32 hex>`, unique), `archived`.
+- `user` : miroir upserté de l'identité Authelia. Aucune donnée d'authentification.
+- `project` : slug (immuable), nom, emoji, couleur, description, `archived`, `created_by`.
+- `project_member(project_id, principal_kind 'user'|'group', principal, role)` : `principal` = `Remote-User` ou un groupe de `Remote-Groups` (ex. `tamagofit-team`), `role ∈ owner | editor | viewer`. Un utilisateur n'a pas besoin d'exister dans `user` pour être invité.
+- `folder` (arbre par projet), `design_file` (`project_id`, `folder_id`, `name`, `tenant_id` `f_<32 hex>`, `trashed_at`, `screen_count`), `activity` (journal).
 
-Règles :
+Règles (fonction pure `lib/rights.ts`, testée) :
 
-- Entrer sur le site : groupe Authelia `design` ou `admin` (règle Authelia + recontrôle portail).
-- `admin` (Walid) : rôle `owner` sur tous les projets.
-- Sinon : le rôle de `project_member` sur le projet du fichier ; aucun membre → aucun accès (gate 403, fichier invisible dans le portail).
-- `viewer` : lecture seule dans l'éditeur (le gate refuse toute écriture ; l'éditeur peut encore dessiner localement mais rien n'est enregistré). `editor`/`owner` : lecture + écriture. `owner` gérera les membres (ticket suivant).
+- Entrer sur le site : groupe Authelia `design` ou `admin`.
+- `admin` (Walid) : `owner` de tout. Sinon rôle effectif = **le plus fort** entre la ligne de l'utilisateur et les lignes de ses groupes ; aucune ligne → **aucun droit**.
+- **Aucun droit ⇒ 404**, identique à un projet inexistant (API portail, pages, API éditeur, page `/editor`). Le gate répond 403 + `X-Edub-Gate-Reason` (nginx `auth_request` ne connaît que 401/403) et `@edub_editor_403` traduit `no-access-to-file` / `missing-or-invalid-tenant` en 404 ; lecture seule / CSRF / route fermée restent des 403.
+- `viewer` : lit (liste, historique, ouverture de l'éditeur), n'écrit rien (gate : toute écriture refusée ; API portail 403). `editor` : fichiers, dossiers, versions, corbeille. `owner` : + partage, renommer/archiver le projet. **Créer un projet : admin seulement** (le créateur en devient owner). Le dernier owner d'un projet ne peut pas être retiré.
+- La page `/editor` passe par le même gate (nginx) : un fichier sans droit répond 404, sans session → login Authelia.
+
+### Historique (git par projet)
+
+`data/projects/<slug>/` est un dépôt git ; un fichier = `<id>.op`, **un commit par enregistrement**, auteur = l'utilisateur Authelia (`user <user@design.edub.fr>`). Le portail tire le document de l'hôte (`GET /api/mcp/document?tenant=`, Bearer fichier) et le commit : (1) ~20 s après la dernière écriture de l'éditeur (le gate programme un snapshot débouncé sur toute écriture `/api/mcp/*`), (2) « Enregistrer une version maintenant », (3) avant restauration / duplication / mise à la corbeille. Pas de commit si rien n'a changé. **Restaurer** = pousser l'ancienne version dans l'hôte (`POST /api/mcp/document`, les onglets ouverts suivent par SSE) + nouveau commit : l'historique n'est jamais réécrit. Vignettes : PNG de la page active via `POST /api/export/raster` de l'hôte, cache `data/projects/.thumbs/`. Corbeille : 30 jours (purge paresseuse à l'ouverture du projet ; l'historique git est conservé).
 
 ## 5. API du portail
 
 | Route | Accès | Rôle |
 |---|---|---|
-| `GET /` | Authelia | Accueil : projets/fichiers visibles, lien « Ouvrir l'éditeur » (`/editor?tenant=f_…`) |
+| `GET /` , `/p/<slug>`, `/p/<slug>/activity` | Authelia | « Mes projets », page projet (dossiers, fichiers, corbeille `?trash=1`), journal |
+| `GET/POST /api/edub/projects` | Authelia | projets visibles / création (admin) |
+| `GET/PATCH/DELETE /api/edub/projects/<slug>` | membre / owner | détail ; modifier, archiver |
+| `GET/POST/DELETE /api/edub/projects/<slug>/members` | owner | partage `{kind,principal,role}` |
+| `GET /…/activity`, `POST /…/files` (JSON ou multipart `.op/.pen/.fig`), `POST/PATCH/DELETE /…/folders` | membre / editor | journal, nouveau fichier / import, dossiers |
+| `GET/PATCH/DELETE /api/edub/files/<id>`, `POST …/duplicate` | membre / editor | métadonnées, renommer/déplacer/restaurer, corbeille |
+| `GET/POST /api/edub/files/<id>/versions`, `POST …/restore`, `GET …/thumbnail` | membre / editor | historique git, version manuelle, restauration, PNG |
 | `GET /api/health` | Authelia (et loopback pour deploy.sh) | `{ok, db, editor}` ; 503 si l'un est KO |
 | `GET /api/edub/editor-gate` | interne nginx uniquement | décision gate (§3), `X-Edub-Editor-Token` |
 | `POST /api/v1/tokens/introspect` | loopback + `X-OP-Internal-Auth` | contrat hub pour l'hôte Rust |
-| `GET /api/v1/session` | loopback | contrat hub, toujours 401 (pas de cookie de session éditeur) |
+| `GET /api/v1/session` | loopback | contrat hub, toujours 401 |
 | `GET/POST /mcp` | public, Bearer | **réservé** : 401 tant que le MCP agents n'est pas livré |
 
 Les routes métier futures du portail vivent sous `/api/edub/*` (`/api/*` hors exceptions part à l'éditeur).

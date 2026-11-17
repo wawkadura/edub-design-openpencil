@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide, parseOriginalUri } from "./gate.ts";
+import { decide, parseOriginalUri, publicStatus } from "./gate.ts";
 
 const T = "f_0123456789abcdef0123456789abcdef";
 const ORIGIN = "https://design.edub.fr";
@@ -43,4 +43,23 @@ test("sharing, device login and local file routes stay closed even for the owner
     assert.equal(decide({ ...base, role: "owner", path, method: "POST", origin: ORIGIN }).allow, false, path);
   }
   assert.equal(decide({ ...base, path: "/pkg/op_host_web.js" }).allow, false);
+});
+
+test("user C (no right): the editor page and the API both look like 404 to them", () => {
+  const page = decide({ ...base, path: "/editor", role: null });
+  assert.equal(publicStatus(page), 404);
+  const api = decide({ ...base, role: null });
+  assert.equal(publicStatus(api), 404);
+  assert.equal(publicStatus(decide({ ...base, tenant: "f_00" })), 404);
+});
+
+test("a known viewer who writes gets a real 403, not a 404", () => {
+  const d = decide({ ...base, role: "viewer", method: "POST", origin: ORIGIN });
+  assert.equal(publicStatus(d), 403);
+});
+
+test("the editor page opens for any member, reads only", () => {
+  assert.deepEqual(decide({ ...base, path: "/editor", role: "viewer" }), { allow: true });
+  assert.equal(decide({ ...base, path: "/editor", role: "owner", method: "POST", origin: ORIGIN }).allow, false);
+  assert.equal(publicStatus(decide({ ...base, path: "/editor", tenant: null })), 404);
 });

@@ -12,6 +12,23 @@ export const BLOCKED_PREFIXES = ["/api/share/", "/api/auth/", "/api/file/"] as c
 
 const READ_METHODS = new Set(["GET", "HEAD"]);
 
+/** The editor page itself: checked like a read so a file the caller cannot see answers 404. */
+export const PAGE_PATHS = ["/editor"] as const;
+
+/**
+ * Reasons that must look like "this does not exist" to the caller. nginx `auth_request` only
+ * understands 401/403, so the gate answers 403 + `X-Edub-Gate-Reason` and nginx maps these
+ * reasons to a 404 (see @edub_editor_403 in nginx-design.edub.fr.conf).
+ */
+export const NOT_FOUND_REASONS = ["no-access-to-file", "missing-or-invalid-tenant"] as const;
+
+/** Status the END USER sees (after nginx's mapping). */
+export function publicStatus(d: GateDecision): 200 | 401 | 403 | 404 {
+  if (d.allow) return 200;
+  if ((NOT_FOUND_REASONS as readonly string[]).includes(d.reason)) return 404;
+  return d.status;
+}
+
 export type GateRequest = { path: string; tenant: string | null };
 
 export function parseOriginalUri(uri: string): GateRequest {
@@ -45,6 +62,14 @@ export function decide(input: {
   role: ProjectRole | null;
 }): GateDecision {
   const method = input.method.toUpperCase();
+  const isPage = (PAGE_PATHS as readonly string[]).includes(input.path);
+  if (isPage) {
+    if (!READ_METHODS.has(method)) return { allow: false, status: 403, reason: "not-an-editor-api-route" };
+    if (!input.tenant || !TENANT_RE.test(input.tenant) || input.role === null) {
+      return { allow: false, status: 403, reason: "no-access-to-file" };
+    }
+    return { allow: true };
+  }
   if (!input.path.startsWith("/api/") || input.path.includes("..")) {
     return { allow: false, status: 403, reason: "not-an-editor-api-route" };
   }

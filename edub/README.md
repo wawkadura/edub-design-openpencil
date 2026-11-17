@@ -39,7 +39,8 @@ portail si KO.
 cd edub/portal
 npm ci
 cp .env.example .env.local   # puis remplir (jamais commité ; le dépôt est public)
-npm test                     # tests unitaires (gate, jetons, identité)
+npm test                     # tests unitaires (droits, gate, jetons, identité, historique git)
+npm run e2e                  # E2E droits + historique contre un `next dev` (voir ci-dessous)
 npm run typecheck
 EDUB_DESIGN_DEV_USER=patrick:design npm run dev   # impersonation, DEV UNIQUEMENT
 ```
@@ -51,6 +52,18 @@ Exemples : `edub:design,admin` (Walid, voit tout), `patrick:design` (ne voit que
 
 Migrations : modifier `lib/db/schema.ts`, puis `npm run db:generate -- --name <nom>` et committer
 `drizzle/`. Elles sont appliquées par `deploy.sh` (`npm run db:migrate`).
+
+## Tests E2E des droits (impersonation)
+
+En dev (`NODE_ENV!=production`) l'en-tête `x-edub-dev-user: user:groupe1,groupe2` impersonne par requête
+(portail **et** gate). Base jetable + faux hôte éditeur :
+
+```sh
+# .env.local de dev : base dédiée, EDUB_DESIGN_PUBLIC_ORIGIN=http://127.0.0.1:3938,
+# EDUB_DESIGN_EDITOR_URL=http://127.0.0.1:3199, EDUB_DESIGN_EDITOR_DATA_DIR / _PROJECTS_DIR sous /tmp
+npm run db:migrate && npx next dev -p 3938 -H 127.0.0.1 &
+npm run e2e          # A owner, B viewer, C 404, groupe tamagofit-team, admin, 3 saves + restauration v1
+```
 
 ## Ouvrir l'éditeur sur un fichier
 
