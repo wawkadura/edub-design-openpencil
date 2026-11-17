@@ -10,18 +10,20 @@
 #   --ref      ref à merger (défaut : upstream/main). Upstream travaille souvent sur une branche de
 #              release vX.Y.Z avant main : le script signale toute branche de release plus récente.
 #   --quick    `cargo check` au lieu du build release (rapide, sans wasm).
+#   --resume   après résolution d'un conflit et `git commit` du merge : relance vérifications + rapport.
 #   --no-build saute Rust + portail (merge + rapport seulement).
 # Plafonds : flock /tmp/edub-design-build.lock, CARGO_BUILD_JOBS=4, nice/ionice.
 # Codes de sortie : 0 propre · 1 conflit (merge laissé en cours) · 2 vérification KO · 3 usage.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$PWD"
-REF=upstream/main; QUICK=0; BUILD=1
+REF=upstream/main; QUICK=0; BUILD=1; RESUME=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref) REF="${2:?}"; shift ;;
     --quick) QUICK=1 ;;
     --no-build) BUILD=0 ;;
+    --resume) RESUME=1 ;;
     *) echo "argument inconnu : $1" >&2; exit 3 ;;
   esac
   shift
@@ -33,45 +35,52 @@ log() { printf '\n→ %s\n' "$*"; }
 die() { echo "ERREUR : $*" >&2; exit "${2:-3}"; }
 
 [[ "$(id -un)" != edub ]] || die "à lancer depuis un clone de dev, pas le clone live (user edub)"
-[[ -z "$(git status --porcelain --untracked-files=no)" ]] || die "arbre de travail non propre"
-git remote get-url upstream >/dev/null 2>&1 || die "remote upstream absent"
-
-log "git fetch upstream"
-git fetch upstream --tags --prune || die "fetch upstream KO"
-git rev-parse --verify -q "$REF^{commit}" >/dev/null || die "ref $REF introuvable"
-
-# Release branches ahead of main (upstream merges them late).
-LATEST_REL="$(git for-each-ref --format='%(refname:short)' 'refs/remotes/upstream/v*' | sort -V | tail -1)"
-HINT=""
-if [[ -n "$LATEST_REL" && "$LATEST_REL" != "$REF" ]] && ! git merge-base --is-ancestor "$LATEST_REL" HEAD; then
-  N=$(git rev-list --count "$REF..$LATEST_REL" 2>/dev/null || echo ?)
-  HINT="Branche de release plus récente : \`$LATEST_REL\` ($N commits devant \`$REF\`). Relancer avec \`--ref $LATEST_REL\` pour la suivre."
-fi
-
-NEW=$(git rev-list --count "HEAD..$REF")
-if [[ "$NEW" == 0 ]]; then
-  echo "Rien à intégrer : $REF est déjà dans HEAD."
-  [[ -n "$HINT" ]] && echo "$HINT"
-  exit 0
-fi
-
-BASE_HEAD="$(git rev-parse HEAD)"
-git checkout -b "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH-$(date +%H%M)" || die "création de branche KO"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-log "merge $REF ($NEW commits) dans $BRANCH"
-
-# Files listed in PATCHES.md (first-column backticked paths) count as "patched".
-PATCHED="$(grep -oE '^\|\s*`[^` ]+`' edub/PATCHES.md | grep -oE '`[^`]+`' | tr -d '`')"
-if ! git merge --no-ff --no-edit "$REF" -m "chore(sync): merge $REF into edub design"; then
-  log "CONFLITS"
-  CONF="$(git diff --name-only --diff-filter=U)"
-  echo "Fichiers Edub (edub/, docs/edub/) :"; echo "$CONF" | grep -E '^(edub|docs/edub)/' | sed 's/^/  /' || true
-  echo "Fichiers patchés (edub/PATCHES.md) :"
-  while read -r f; do grep -qxF "$f" <<<"$PATCHED" && echo "  $f"; done <<<"$CONF"
-  echo "Autres fichiers upstream :"
-  while read -r f; do [[ "$f" =~ ^(edub|docs/edub)/ ]] || grep -qxF "$f" <<<"$PATCHED" || echo "  $f"; done <<<"$CONF"
-  echo; echo "Merge laissé en cours sur $BRANCH. Résoudre (voir edub/PATCHES.md) puis commit, ou : git merge --abort && git checkout - && git branch -D $BRANCH"
-  exit 1
+if [[ $RESUME == 1 ]]; then
+  git rev-parse -q --verify HEAD^2 >/dev/null || die "--resume : HEAD n'est pas un commit de merge"
+  BRANCH="$(git rev-parse --abbrev-ref HEAD)"; BASE_HEAD="$(git rev-parse HEAD^1)"; REF="$(git rev-parse HEAD^2)"
+  NEW=$(git rev-list --count "$BASE_HEAD..$REF"); HINT=""
+  PATCHED=""
+else
+  [[ -z "$(git status --porcelain --untracked-files=no)" ]] || die "arbre de travail non propre"
+  git remote get-url upstream >/dev/null 2>&1 || die "remote upstream absent"
+  
+  log "git fetch upstream"
+  git fetch upstream --tags --prune || die "fetch upstream KO"
+  git rev-parse --verify -q "$REF^{commit}" >/dev/null || die "ref $REF introuvable"
+  
+  # Release branches ahead of main (upstream merges them late).
+  LATEST_REL="$(git for-each-ref --format='%(refname:short)' 'refs/remotes/upstream/v*' | sort -V | tail -1)"
+  HINT=""
+  if [[ -n "$LATEST_REL" && "$LATEST_REL" != "$REF" ]] && ! git merge-base --is-ancestor "$LATEST_REL" HEAD; then
+    N=$(git rev-list --count "$REF..$LATEST_REL" 2>/dev/null || echo ?)
+    HINT="Branche de release plus récente : \`$LATEST_REL\` ($N commits devant \`$REF\`). Relancer avec \`--ref $LATEST_REL\` pour la suivre."
+  fi
+  
+  NEW=$(git rev-list --count "HEAD..$REF")
+  if [[ "$NEW" == 0 ]]; then
+    echo "Rien à intégrer : $REF est déjà dans HEAD."
+    [[ -n "$HINT" ]] && echo "$HINT"
+    exit 0
+  fi
+  
+  BASE_HEAD="$(git rev-parse HEAD)"
+  git checkout -b "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH-$(date +%H%M)" || die "création de branche KO"
+  BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+  log "merge $REF ($NEW commits) dans $BRANCH"
+  
+  # Files listed in PATCHES.md (first-column backticked paths) count as "patched".
+  PATCHED="$(grep -oE '^\|\s*`[^` ]+`' edub/PATCHES.md | grep -oE '`[^`]+`' | tr -d '`')"
+  if ! git merge --no-ff --no-edit "$REF" -m "chore(sync): merge $REF into edub design"; then
+    log "CONFLITS"
+    CONF="$(git diff --name-only --diff-filter=U)"
+    echo "Fichiers Edub (edub/, docs/edub/) :"; echo "$CONF" | grep -E '^(edub|docs/edub)/' | sed 's/^/  /' || true
+    echo "Fichiers patchés (edub/PATCHES.md) :"
+    while read -r f; do grep -qxF "$f" <<<"$PATCHED" && echo "  $f"; done <<<"$CONF"
+    echo "Autres fichiers upstream :"
+    while read -r f; do [[ "$f" =~ ^(edub|docs/edub)/ ]] || grep -qxF "$f" <<<"$PATCHED" || echo "  $f"; done <<<"$CONF"
+    echo; echo "Merge laissé en cours sur $BRANCH. Résoudre (voir edub/PATCHES.md) puis commit, ou : git merge --abort && git checkout - && git branch -D $BRANCH"
+    exit 1
+  fi
 fi
 git submodule update --init --recursive || die "submodules KO" 2
 
@@ -82,7 +91,10 @@ step() { # step <label> <cmd...>
 }
 if [[ $BUILD == 1 ]]; then
   export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
-  CAP=(flock /tmp/edub-design-build.lock nice -n 19 ionice -c3)
+  # The shared lock belongs to user edub (deploy build); from a dev user we cannot open it, fall back to a dev lock.
+  LOCK=/tmp/edub-design-build.lock
+  { : >>"$LOCK"; } 2>/dev/null || { LOCK=/tmp/edub-design-build-dev.lock; echo "(verrou partagé inaccessible → $LOCK)"; }
+  CAP=(flock "$LOCK" nice -n 19 ionice -c3)
   if [[ $QUICK == 1 ]]; then
     step "cargo check (op-host-web-server)" "${CAP[@]}" cargo check -p op-host-web-server --locked
   else
