@@ -29,6 +29,7 @@ export const SEED_PROJECTS: SeedProject[] = [
   { slug: "edub-console", name: "Edub Console", emoji: "🖥️", color: "#64748b", description: "Console d'administration.", section: true },
   { slug: "edub-watch", name: "Edub Watch", emoji: "⌚", color: "#f97316", description: "Apps montre.", section: true },
   { slug: "edub-design", name: "Edub Design", emoji: "🎨", color: "#ec4899", description: "Cet outil : portail, éditeur, galerie d'écrans.", section: true },
+  { slug: "tamafit", name: "TamaFit", emoji: "🥚", color: "#f43f5e", description: "App TamaFit (mobile) : captures de QA et maquettes des agents TamaFit.", section: true },
   { slug: "golfn", name: "GolfN", emoji: "⛳", color: "#84cc16", description: "Projet vide : à Walid de décider.", section: false },
 ];
 
