@@ -80,3 +80,8 @@ packages/.toolchain/
 
 # Codex CLI local config
 .codex/
+
+# Edub Design (ED_1727)
+/data/
+/dist.new/
+/dist.old/
