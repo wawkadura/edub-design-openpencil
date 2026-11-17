@@ -78,6 +78,17 @@ changement de la conf nginx, la recopier (cf. plus haut). QA sans compte Autheli
 `http://127.0.0.1:3938/editor?tenant=f_0123456789abcdef0123456789abcdef&as=editor|viewer|admin`
 (binaire lu dans `/home/edub/apps/edub-design/dist`).
 
+## Suivre l'upstream (ED_1735)
+
+- **Sync** : depuis une worktree de dev, `bash edub/scripts/sync-upstream.sh [--ref upstream/<release>] [--quick] [--no-build]`.
+  Fetch, branche `sync/upstream-<date>`, merge, puis build Rust (flock + `CARGO_BUILD_JOBS=4` + nice), `cargo test -p op-host-services`,
+  build/typecheck/tests du portail, smoke (le binaire répond en `--online`), rapport dans `docs/edub/sync-reports/<date>.md`.
+  Conflit : le script s'arrête et liste les fichiers (Edub / patchés / autres). **Il ne touche jamais `main`** : ff-merge + `deploy.sh` à la main.
+  Upstream travaille sur des branches de release `vX.Y.Z` avant `main` : le script signale une release plus récente (`--ref upstream/vX.Y.Z`).
+- **Patches** : `edub/PATCHES.md` (test `edub/portal/lib/patches.test.ts` : un fichier listé qui disparaît fait échouer `npm test`).
+- **Rappel mensuel** : cron `17 6 1 * *` (user ubuntu) → `edub/scripts/upstream-reminder.sh` ouvre le ticket « Mettre à jour Edub Design depuis l'upstream » sur le board
+  (le board n'offre pas de ticket récurrent aux agents).
+
 ## Secrets (jamais dans le dépôt)
 
 - `edub/portal/.env.local` (600, edub) : `EDUB_DESIGN_DATABASE_URL`, `EDUB_DESIGN_TOKEN_SECRET`, chemins.
