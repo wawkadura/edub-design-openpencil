@@ -179,3 +179,19 @@ nginx injecte dans la page `/editor` (`sub_filter`) : `lang="fr"`, titre « Edub
 - Tout le spécifique Edub vit dans `edub/` et `docs/edub/` (+ la section « Edub » en tête de `CLAUDE.md` et 6 lignes de `.gitignore`) : les conflits de merge se limitent à ces deux fichiers.
 - Procédure : `git fetch upstream && git merge upstream/main` sur une branche, `cargo test -p op-host-services` (online/tenant/hub), puis déploiement (`deploy.sh` détecte le changement de crates et reconstruit). Revérifier §2 : contrat hub (`hub_auth_client.rs`), politique online (`online_policy.rs`), chemins `/api/*` du shell (`op-host-web/src/daemon_base.rs`), format du store (`tenant_store.rs`).
 - Ne pas reprendre l'upstream à l'aveugle : un nouveau chemin d'API éditeur hors `/api/` ou une nouvelle route sensible en online doit être reflété dans nginx et `edub/portal/lib/gate.ts`.
+
+## 11. Revue finale (ED_1738) — état, pièges, accès
+
+**État (2026-11-17)** : portail, droits, éditeur brandé FR, galerie, MCP, import TamaFit (978 écrans), 12 projets de départ : en prod. Revue de sécurité des droits faite ; aucun accès hors périmètre trouvé, un défaut mineur corrigé (slug avec octet NUL → 500, désormais 404 : `projectForIdentity` valide `SLUG_RE`).
+
+**Preuve automatisée** : `npm run e2e:guest` (`edub/portal/scripts/e2e-guest.mts`, 9 groupes) joue « patrick » (editor sur un projet) contre un projet où il n'a rien : pages, API (tous verbes), images / vignettes / versions / commentaires, path traversal, gate de l'éditeur (page + API, tenant smuggling `?tenant=A&tenant=B`, CSRF, routes fermées, IA admin seulement), contexte éditeur, admin des jetons, MCP (jeton limité à un projet, recherche, jeton absent / forgé / révoqué), URL signées. Avec `e2e` (droits + historique), `e2e:screens`, `e2e:sandbox` et `npm test`.
+
+**Pièges connus**
+- L'éditeur Rust n'a pas de vrai mode lecture seule ni de masquage de la barre IA : le viewer / editor voit la barre « Concevoir avec un agent » mais le gate refuse (`ai-admin-only`, `read-only-access`). Candidat patch §9.
+- MCP `add_screen` / `add_html_mockup` avec `path` lit un fichier du serveur sous `/tmp` ou `/var/tmp` (contenu imposé image / HTML). Un jeton editor peut donc lire une image ou un `.html` lisible par `edub` dans ces dossiers. Réduire avec `EDUB_DESIGN_MCP_PATH_ROOTS` (un dossier dédié) si des jetons sont donnés à des externes.
+- Les URL signées (`/mcp/dl`, 10 min) sont des capacités au porteur : ne pas les coller dans un canal public.
+- `next dev` dans le clone live réécrit `edub/portal/tsconfig.json` : le restaurer. Une base ou un dossier `data/` de test ne doit jamais être celui de la prod.
+- Rust : la perf de l'éditeur se mesure sur GPU réel ; en QA (SwiftShader, sans GPU) un fichier de 930 éléments charge en < 1 s mais le zoom est lent.
+
+**Donner accès à quelqu'un** : (1) le supervisor (user `ubuntu`) crée le compte Authelia et l'ajoute au groupe `design` (jamais `admin`) ; (2) dans l'app, un propriétaire du projet l'ajoute via « Partager » (utilisateur ou groupe, rôle Lecteur / Éditeur / Propriétaire). Sans l'étape 2 la personne se connecte mais ne voit aucun projet ; sans l'étape 1 elle est refusée à l'entrée. Les agents passent par un jeton MCP (`/admin/tokens`, admin Authelia seulement), limité à des projets et plafonné à éditeur.
+

@@ -43,6 +43,7 @@ npm test                     # tests unitaires (droits, gate, jetons, identité,
 npm run e2e:screens          # galerie d'écrans : API, droits, 404 images, 200 uploads (même setup que ci-dessous)
 # import des designs TamaFit : bash edub/scripts/import-tamafit-designs.sh [--dry-run] [--report /tmp/r.md]  (cf. spec §5 ter)
 npm run e2e:sandbox          # galerie : sandbox HTML, lightbox, comparaison (Playwright + Chrome système)
+npm run e2e:guest            # invité limité : aucune porte vers un autre projet (pages, API, images, éditeur, MCP)
 npm run e2e                  # E2E droits + historique contre un `next dev` (voir ci-dessous)
 npm run typecheck
 EDUB_DESIGN_DEV_USER=patrick:design npm run dev   # impersonation, DEV UNIQUEMENT

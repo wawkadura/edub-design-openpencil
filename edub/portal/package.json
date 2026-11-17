@@ -18,6 +18,7 @@
     "seed:projects": "tsx scripts/seed-projects.ts",
     "mcp:token": "tsx scripts/mcp-token.ts",
     "e2e": "tsx scripts/e2e-rights.mts",
+    "e2e:guest": "tsx scripts/e2e-guest.mts",
     "e2e:screens": "tsx scripts/e2e-screens.mts",
     "e2e:sandbox": "tsx scripts/e2e-sandbox.mts"
   },

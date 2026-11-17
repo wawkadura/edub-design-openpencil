@@ -179,8 +179,11 @@ a { color: inherit; }
 .cmp-range { width: min(520px, 100%); margin-top: 10px; display: block; }
 @media (max-width: 900px) {
   .gallery, .detail { grid-template-columns: 1fr; }
-  .sections { position: static; display: flex; flex-wrap: wrap; max-height: none; }
-  .sec-row { flex: 0 0 auto; }
+  /* mobile: one scrolling strip of sections, so the screens start right under the tabs (ED_1738) */
+  .sections { position: static; display: flex; flex-wrap: nowrap; align-items: flex-start; overflow-x: auto; max-height: none; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  .sections > div { display: contents; }
+  .sec-row, .sec { flex: 0 0 auto; white-space: nowrap; }
+  .sec-row.sub { padding-left: 0; }
 }
 @media (max-width: 600px) {
   .screen-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }

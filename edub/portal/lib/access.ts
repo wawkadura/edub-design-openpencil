@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, schema } from "./db/index.ts";
 import type { Identity } from "./identity.ts";
 import type { DesignFile, Member, Project, ProjectRole, User } from "./db/schema.ts";
-import { resolveRole } from "./rights.ts";
+import { resolveRole, SLUG_RE } from "./rights.ts";
 
 /** Mirror the Authelia identity into `user` (insert or refresh). */
 export async function upsertUser(identity: Identity): Promise<User> {
@@ -41,6 +41,7 @@ export type ProjectAccess = { project: Project; role: ProjectRole };
 
 /** The project, only if the caller has a role on it. null = "does not exist" for them (404). */
 export async function projectForIdentity(identity: Identity, slug: string): Promise<ProjectAccess | null> {
+  if (!SLUG_RE.test(slug)) return null; // also keeps NUL bytes etc. away from Postgres (would be a 500)
   const [project] = await getDb().select().from(schema.projects).where(eq(schema.projects.slug, slug)).limit(1);
   if (!project) return null;
   const role = await roleOnProject(identity, project.id);

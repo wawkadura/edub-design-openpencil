@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { mintEditorToken, verifyEditorToken } from "../lib/editor-token.ts";
 import { decide, parseOriginalUri } from "../lib/gate.ts";
 
-const FRONT = 3938, HUB = 3939, EDITOR = 3101;
+const FRONT = Number(process.env.HARNESS_PORT ?? 3938), HUB = FRONT + 1, EDITOR = FRONT + 163;
 const SECRET = "harness-token-secret";
 const DIST = "/home/edub/apps/edub-design/dist";
 const TENANT = "f_0123456789abcdef0123456789abcdef";
