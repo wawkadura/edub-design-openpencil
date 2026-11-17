@@ -17,25 +17,33 @@ ROOT="$PWD"
 ECO="$ROOT/edub/deploy/ecosystem.config.cjs"
 [[ "$(id -un)" == edub ]] || { echo "À lancer en user edub : sudo -u edub bash $0 $*" >&2; exit 1; }
 
-PULL=1; FORCE_RUST=0
-for arg in "$@"; do
-  case "$arg" in
+PULL=1; FORCE_RUST=0; FROM=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --no-pull) PULL=0 ;;
     --rust) FORCE_RUST=1 ;;
-    *) echo "argument inconnu : $arg" >&2; exit 2 ;;
+    --from) FROM="${2:?}"; PULL=0; shift ;;  # internal: re-exec after pull
+    *) echo "argument inconnu : $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
-exec 9>/tmp/edub-design-deploy.lock
-flock -n 9 || { echo "Un déploiement Edub Design est déjà en cours." >&2; exit 1; }
+if [[ -z "$FROM" ]]; then
+  exec 9>/tmp/edub-design-deploy.lock
+  flock -n 9 || { echo "Un déploiement Edub Design est déjà en cours." >&2; exit 1; }
+fi
 export PATH="$HOME/.npm-global/bin:$PATH"
 log() { printf '\n→ %s\n' "$*"; }
 
-BEFORE="$(git rev-parse HEAD)"
+BEFORE="${FROM:-$(git rev-parse HEAD)}"
 if [[ $PULL == 1 ]]; then
   log "git pull --ff-only"
   git pull --ff-only
   git submodule update --init --recursive
+  # The pull may have rewritten this very script while bash is reading it: re-exec the
+  # new version (lock fd 9 is inherited, so the lock stays held).
+  ARGS=(--from "$BEFORE"); [[ $FORCE_RUST == 1 ]] && ARGS+=(--rust)
+  exec bash "$ROOT/edub/scripts/deploy.sh" "${ARGS[@]}"
 fi
 AFTER="$(git rev-parse HEAD)"
 changed() { [[ "$BEFORE" != "$AFTER" ]] && git diff --name-only "$BEFORE" "$AFTER" | grep -Eq "$1"; }
