@@ -28,7 +28,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-[[ -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
+if [[ -f "$HOME/.cargo/env" ]]; then . "$HOME/.cargo/env"
+elif [[ -d /home/edub/.rustup && -x /home/edub/.cargo/bin/cargo ]]; then
+  # Dev user without its own toolchain: reuse the (read-only) rustup of user edub, own CARGO_HOME for downloads.
+  export RUSTUP_HOME=/home/edub/.rustup CARGO_HOME="${CARGO_HOME:-$HOME/.cargo-dev}" PATH="/home/edub/.cargo/bin:$PATH"
+fi
 export PATH="$HOME/.npm-global/bin:$PATH"
 DATE="$(date +%F)"; BRANCH="sync/upstream-$DATE"
 log() { printf '\n→ %s\n' "$*"; }
