@@ -5,6 +5,7 @@ import { getDb, schema } from "../db/index.ts";
 import type { Project, Screen } from "../db/schema.ts";
 import { env } from "../env.ts";
 import { addComment, addVersion, createScreen, getScreen, isUuid, listComments, listScreens, listSections, thumbBytes, updateScreen, versionBytes } from "../screens.ts";
+import { ensureSection } from "../screens-import.ts";
 import { MAX_HTML_BYTES, PLATFORMS, STATUSES } from "../screens-model.ts";
 import { screenJson, versionJson } from "../screens-route.ts";
 import type { UploadInput } from "../screens-input.ts";
@@ -123,6 +124,19 @@ export const screenTools: Tool[] = [
     async run(ctx, args) {
       const { project } = await needProject(ctx, args, false);
       return json({ sections: (await listSections(project.id)).map((s) => ({ id: s.id, name: s.name, parentId: s.parentId, screens: s.count })) });
+    },
+  },
+  {
+    name: "ensure_section",
+    description: "Return the top-level gallery section with this exact name, creating it when missing (idempotent). Used to file screens by month, e.g. \"Tickets / 2026-11\".",
+    write: true,
+    inputSchema: { type: "object", properties: { project: PROJECT_ARG, name: { type: "string", description: "Section name (max 80 chars)." } }, required: ["project", "name"] },
+    async run(ctx, args) {
+      const { project } = await needProject(ctx, args, true);
+      const name = str(args, "name", true)!.trim();
+      if (!name || name.length > 80) throw new ToolError("name must be 1 to 80 characters");
+      const section = await ensureSection(project.id, null, name);
+      return json({ id: section.id, name: section.name });
     },
   },
   {
