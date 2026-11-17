@@ -17,7 +17,7 @@
 - **L'identité est déléguée à un « hub »** (`hub_auth_client.rs`, `hub_verifier.rs`) : `OPENPENCIL_HUB_BASE_URL` + secret interne. Contrat : `POST /api/v1/tokens/introspect` (`X-OP-Internal-Auth`, corps `{"token"}` → `{active,user_id,username,scopes,expires_at_unix}`), `GET /api/v1/session` (cookie `op_hub_session`). `user_id` **est la clé du tenant**.
 - **Partage upstream** : `?tenant=<owner>` + ACL par propriétaire (`/api/share/*`). Un tenant = le document unique d'un compte : pas de notion de projets ni de fichiers multiples, pas de rôle lecteur. Insuffisant pour le besoin 1 et 3 tel quel.
 - **Ce qui sort vers l'extérieur** : en online, aucun appel sortant n'est fait au nom du serveur hors IA. L'IA du chat est en « apporte ta clé » : la clé reste dans le navigateur, l'hôte relaie la requête vers le fournisseur choisi (filtre d'endpoints publics) ; les modèles hébergés (op-hub), les agents CLI (Claude Code, Codex…) et le relai de collaboration public sont **indisponibles en online**. Pas de télémétrie trouvée dans l'hôte web ni le bundle. Le login cloud (device login) est refusé en online.
-- **Limite connue upstream** : en online, les vignettes d'images embarquées ne sont pas publiées (registre global, `allows_image_thumb_registry`) → un nœud image s'affiche en placeholder dans l'éditeur. À traiter quand on importera les écrans PNG (voir §9).
+- **Limite connue upstream** : en online, le registre global des vignettes d'images embarquées n'est pas alimenté (`allows_image_thumb_registry`). Les images de la démo (remplissages par URL) s'affichent bien ; à revérifier quand on importera les écrans PNG (voir §9).
 
 ## 3. Architecture retenue
 
@@ -52,6 +52,12 @@ Pourquoi c'est le plus simple qui tienne les 3 besoins :
 - Le tenant servi est `?tenant=` (premier paramètre, sans décodage, même règle des deux côtés) ; l'identité introspectée vaut ce même tenant. Si les deux divergeaient, l'hôte retomberait sur son ACL (vide) → refus.
 - **CSRF** : le Bearer étant injecté par nginx, le contrôle d'origine cookie de l'hôte ne joue plus ; le gate exige donc `Origin: https://design.edub.fr` pour toute méthode autre que GET/HEAD.
 - Le gate revérifie la session Authelia lui-même (appel loopback à `127.0.0.1:9091/api/authz/auth-request` avec le cookie), cache positif 15 s : nginx ne peut pas enchaîner deux `auth_request` sur une même location.
+
+### Ouverture de l'éditeur
+
+- Lien du portail : `/editor?tenant=f_…`. Le shell wasm ajoute ce `tenant` à chacun de ses appels `/api/*` (`op-host-web/src/daemon_base.rs`).
+- L'accueil du portail pré-remplit, **si absents**, les réglages locaux de l'éditeur (`localStorage['openpencil-rust-web-settings::anon']`, `app/editor-defaults.tsx`) : interface en français, ouverture directe sur le canevas (sinon : Studio Home en chinois). Un choix fait ensuite dans l'éditeur n'est jamais écrasé.
+- Bruit attendu dans la console : `GET /api/auth/status` → 403 (login device fermé ; l'éditeur reste en compte anonyme local, sans effet).
 
 ## 4. Modèle de droits
 
