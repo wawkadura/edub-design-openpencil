@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Edub — read this first (fork `wawkadura/edub-design`)
+
+This repo is **Edub Design** (`https://design.edub.fr`), Walid's fork of OpenPencil. Everything Edub-specific lives in **`edub/`** and **`docs/edub/`**; the rest of this file is upstream's and must keep merging cleanly.
+
+- **Spec (read first):** `docs/edub/2026-11-16-edub-design-spec.md` — architecture, rights model, API, MCP, storage, what is disabled, upstream-merge strategy.
+- **Ops:** `edub/README.md` (deploy, dev, impersonation) and `edub/deploy/INFRA.md` (paths, ports, Authelia, Rust build).
+- **Architecture in one line:** the Rust web host runs unmodified in `--serve-web --online` mode (loopback :3100) where **one tenant = one design file** (`f_<32 hex>`); the Next portal (`edub/portal`, :3038) owns identity (Authelia `Remote-*`), projects and rights, acts as the host's identity "hub", and gates every editor `/api/*` call through nginx `auth_request`, injecting a per-file Bearer.
+- **Rules:** no core Rust patch unless unavoidable — then minimal, isolated, listed in spec §9. The GitHub fork is **public**: never commit secrets. Deploy only with `sudo -u edub bash /home/edub/apps/edub-design/edub/scripts/deploy.sh` after merging to `main`.
+- Portal checks: from `edub/portal`, `npm test` and `npm run typecheck`.
+
 > **The TypeScript OpenPencil has been retired.** `apps/web`, `apps/desktop`, `apps/cli`, and the `pen-*` packages (pen-types/core/engine/renderer/figma/mcp/ai-skills/sdk/react/acp) are gone. The product is now implemented in **Rust** (`crates/`) with a thin **wasm-backed web SDK** (`packages/op-web-sdk*`). Historical `// ported from pen-*` comments in the Rust sources name the retired TS as their origin — that code no longer exists in-tree; consult git history (last TS tag `v0.7.5`) if you need it.
 
 Detailed module docs load automatically in subdirectories:

@@ -21,6 +21,8 @@ docs/
 # collaboration security contract with the open implementation.
 !/docs/
 /docs/*
+# Edub fork docs (spec read by every Edub Design ticket).
+!/docs/edub/
 !/docs/security/
 /docs/security/*
 !/docs/security/p2p-collaboration-threat-model.md
@@ -85,3 +87,12 @@ packages/.toolchain/
 /data/
 /dist.new/
 /dist.old/
+
+# Edub portal (Next.js)
+/edub/portal/.next/
+/edub/portal/next-env.d.ts
+/edub/portal/*.tsbuildinfo
+/edub/portal/.next-a/
+/edub/portal/.next-b/
+/edub/portal/.next-active
+/edub/portal/.next-build/
