@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { projectForIdentity } from "@/lib/access.ts";
+import { renderMarkdown } from "@/lib/markdown.ts";
 import { canWrite } from "@/lib/rights.ts";
 import { pageAuth } from "@/lib/page-auth.ts";
 import { listScreens, listSections, projectTags } from "@/lib/screens.ts";
@@ -71,6 +72,7 @@ export default async function ScreensPage({ params, searchParams }: { params: Pr
         </aside>
         <section>
           {write ? <Uploader slug={slug} sectionId={sp.section && sp.section !== "none" ? sp.section : null} platform={sp.platform ? parsePlatform(sp.platform) : null} /> : <p className="muted small">Lecture seule : tu vois les écrans sans pouvoir en ajouter.</p>}
+          {activeSection?.description ? <details className="md section-note"><summary className="small muted">Note de la section « {activeSection.name} »</summary><div dangerouslySetInnerHTML={{ __html: renderMarkdown(activeSection.description) }} /></details> : null}
           <FilterBar slug={slug} current={current} tags={tags} />
           {items.length === 0 ? <p className="muted">{Object.keys(current).length ? "Aucun écran ne correspond." : "Aucun écran pour l'instant."}</p> : <ScreenGrid slug={slug} items={items} />}
           {pages > 1 ? (

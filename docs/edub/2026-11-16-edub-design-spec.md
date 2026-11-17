@@ -112,6 +112,18 @@ Par projet, onglet **Écrans** (`/p/<slug>/screens`). Mêmes rôles que le proje
 - **UI** : grille paginée (60/page, vignettes lazy, `content-visibility`), filtres dans l'URL, lightbox (←/→, swipe, Esc, geste retour), upload glisser-déposer / coller / galerie mobile, détail (versions, commentaires épinglés, liens tickets → `https://dev.edub.fr/?todo=ED_xxxx`), partage = lien `/p/<slug>/screens/<id>` (membres seulement), comparaison côte à côte / curseur / différences (`mix-blend-mode: difference`).
 - **Pas fait ici** : import TamaFit (ticket suivant), outils MCP (ticket MCP), notification des @mentions (journal d'activité seulement), rendu d'un frame `.op` pour les écrans `design` (lien seulement).
 
+## 5 ter. Import de `tamafit-app/docs/designs` (ED_1733)
+
+`bash edub/scripts/import-tamafit-designs.sh` (relançable, clé d'idempotence = chemin source stocké dans `screen.source_key`) :
+snapshot **en lecture seule** du dossier source (le user `edub` ne lit pas le dépôt TamaFit) + dates du dernier commit git de chaque fichier,
+import par `edub/portal/scripts/import-tamafit-designs.ts`, snapshot supprimé. Les designs TamaFit ne sont **jamais** dans le dépôt (données dans `data/`).
+
+- 1 dossier = 1 section, sous-dossier = sous-section (la galerie n'imbrique qu'un niveau : plus profond → tags) ; `archive*` → statut `obsolète` ; `assets` et `exercise-images` → section « Ressources ».
+- PNG/WebP/JPG → `capture` ; SVG → rastérisé en PNG (`capture`) ; HTML → `maquette-html` rendue **autonome** : CSS, JS, images, polices relatifs sont inlinés (`data:`), car l'iframe sandbox n'a pas d'origine et ne reçoit pas le cookie Authelia pour ses sous-ressources. Au-delà de 8 Mo, les rasters sont ré-encodés en WebP.
+- Un PNG « rendu » d'un HTML (`x.html` + `x.png` ou `x-overview.png`) n'est pas un écran à part : il sert de vignette à la maquette (tag `rendu-png`).
+- `.md` : `README.md` / notes d'un dossier → `screen_section.description` (affichée dans la galerie), `x.md` à côté de `x.html|png` → description de l'écran. Une relance ne remplace jamais une description déjà éditée.
+- Relance : mêmes octets → rien ; octets changés → nouvelle version (historique gardé). Droits jamais touchés (owner seul à la création).
+
 ## 6. MCP agents — livré (ED_1732)
 
 - `https://design.edub.fr/mcp` : Streamable HTTP sans session (SDK `@modelcontextprotocol/sdk`, serveur bas niveau, schémas JSON), code dans `edub/portal/lib/mcp/`. Mode d'emploi et liste des outils : `edub/docs/mcp.md`.

@@ -122,6 +122,8 @@ export const screenSections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").references((): AnyPgColumn => screenSections.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /** Markdown note of the section (imports: the `README.md` of the source folder). */
+    description: text("description").notNull().default(""),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -157,10 +159,16 @@ export const screens = pgTable(
     authorKind: text("author_kind").notNull().default("user"),
     author: text("author").notNull(),
     currentVersion: integer("current_version").notNull().default(0),
+    /** Imports: POSIX path in the source tree, the idempotency key (also locates the mockup's relative assets). */
+    sourceKey: text("source_key"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("screen_project_idx").on(t.projectId, t.updatedAt), index("screen_section_idx").on(t.sectionId)],
+  (t) => [
+    index("screen_project_idx").on(t.projectId, t.updatedAt),
+    index("screen_section_idx").on(t.sectionId),
+    uniqueIndex("screen_source_key_idx").on(t.projectId, t.sourceKey).where(sql`${t.sourceKey} is not null`),
+  ],
 );
 
 /** Every upload is a new version; the history is kept (comparison is built on it). */
