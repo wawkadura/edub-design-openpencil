@@ -207,6 +207,49 @@ export const screenComments = pgTable(
   (t) => [index("screen_comment_idx").on(t.screenId, t.createdAt)],
 );
 
+/* ───────────── Agent MCP tokens (ED_1732) ───────────── */
+
+/** One grant of a token: a project slug (or `*` = every project) at `viewer` or `editor` (never owner). */
+export type TokenScope = { project: string; role: "viewer" | "editor" };
+
+/** Bearer credential of an agent (`https://design.edub.fr/mcp`). Only the sha-256 is stored. */
+export const mcpTokens = pgTable(
+  "mcp_token",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    label: text("label").notNull(),
+    /** First characters of the secret, to recognise a token in the admin list. */
+    prefix: text("prefix").notNull(),
+    hash: text("hash").notNull().unique(),
+    scopes: jsonb("scopes").$type<TokenScope[]>().notNull().default(sql`'[]'::jsonb`),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+);
+
+/** Journal of the MCP calls (who, which tool, which project, result). */
+export const mcpCalls = pgTable(
+  "mcp_call",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenId: uuid("token_id")
+      .notNull()
+      .references(() => mcpTokens.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    project: text("project"),
+    ok: boolean("ok").notNull(),
+    error: text("error"),
+    ms: integer("ms").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("mcp_call_token_idx").on(t.tokenId, t.createdAt)],
+);
+
+export type McpToken = typeof mcpTokens.$inferSelect;
+export type McpCall = typeof mcpCalls.$inferSelect;
+
 export type ScreenSection = typeof screenSections.$inferSelect;
 export type Screen = typeof screens.$inferSelect;
 export type ScreenVersion = typeof screenVersions.$inferSelect;

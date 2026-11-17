@@ -112,11 +112,13 @@ Par projet, onglet **Écrans** (`/p/<slug>/screens`). Mêmes rôles que le proje
 - **UI** : grille paginée (60/page, vignettes lazy, `content-visibility`), filtres dans l'URL, lightbox (←/→, swipe, Esc, geste retour), upload glisser-déposer / coller / galerie mobile, détail (versions, commentaires épinglés, liens tickets → `https://dev.edub.fr/?todo=ED_xxxx`), partage = lien `/p/<slug>/screens/<id>` (membres seulement), comparaison côte à côte / curseur / différences (`mix-blend-mode: difference`).
 - **Pas fait ici** : import TamaFit (ticket suivant), outils MCP (ticket MCP), notification des @mentions (journal d'activité seulement), rendu d'un frame `.op` pour les écrans `design` (lien seulement).
 
-## 6. MCP (cible, ticket suivant)
+## 6. MCP agents — livré (ED_1732)
 
-- Jetons agents émis par le portail (table dédiée, haché, scopes `read`/`write`, projets autorisés), présentés en `Authorization: Bearer` sur `https://design.edub.fr/mcp` (déjà exempté d'Authelia dans nginx).
-- Outils portail : lister projets/fichiers, créer un fichier, lire l'aperçu/écran. Outils de design : relais vers le MCP de l'hôte `POST 127.0.0.1:3100/mcp?tenant=f_…` avec un Bearer fichier minté (même `mintEditorToken`), profil complet ou `lean`.
-- Vérifié pendant ED_1728 : `tools/list` (159 outils) et `tools/call get_document_info` répondent sur un tenant fichier.
+- `https://design.edub.fr/mcp` : Streamable HTTP sans session (SDK `@modelcontextprotocol/sdk`, serveur bas niveau, schémas JSON), code dans `edub/portal/lib/mcp/`. Mode d'emploi et liste des outils : `edub/docs/mcp.md`.
+- Jetons `edd_…` (table `mcp_token`, sha-256 seul stocké, scopes `{project|*, role viewer|editor}`, jamais owner), administrés par Walid sur `/admin/tokens`. Un projet hors scope = « not found ». Journal des appels `mcp_call`, rate-limit par jeton.
+- Identité d'un agent : `agent:<label>` (journal d'activité, auteur des commits git). Les droits sont ceux du jeton, pas ceux d'un utilisateur Authelia.
+- Outils de design (`batch_design`, `design_*`, `batch_get`, `export_*`) : relais vers `POST 127.0.0.1:3100/mcp?tenant=f_…` avec un Bearer fichier minté (`mintEditorToken`), liste blanche, `filePath` supprimé ; après une écriture le portail enregistre le document vivant dans git au nom de l'agent.
+- Liens signés (`/mcp/dl`, HMAC, 10 min) pour images d'écran et exports.
 
 ## 7. Stockage
 

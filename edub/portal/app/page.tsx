@@ -39,6 +39,7 @@ export default async function Home() {
         <div className="who">
           <span>{identity.displayName ?? identity.username}</span>
           {admin ? <span className="chip">admin</span> : null}
+          {admin ? <Link href="/admin/tokens" className="btn">Jetons MCP</Link> : null}
           {admin ? <NewProjectButton /> : null}
         </div>
       </header>

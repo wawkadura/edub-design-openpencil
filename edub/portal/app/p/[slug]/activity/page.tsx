@@ -21,7 +21,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ slug:
         <ul className="activity">
           {items.map((a) => (
             <li key={a.id}>
-              <b>{a.actor}</b> {ACTION_LABEL[a.action] ?? a.action} {a.targetName ? <i>{a.targetName}</i> : null}
+              <b>{a.actor.startsWith("agent:") ? `🤖 ${a.actor.slice(6)}` : a.actor}</b> {ACTION_LABEL[a.action] ?? a.action} {a.targetName ? <i>{a.targetName}</i> : null}
               {a.action === "member.set" && a.meta?.role ? <span className="muted"> ({String(a.meta.role)})</span> : null}
               <span className="muted small"> · {a.createdAt.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
             </li>
