@@ -48,6 +48,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
 
       <div className="tabs">
         <Link className={!trash ? "tab on" : "tab"} href={`/p/${slug}`}>Fichiers</Link>
+        <Link className="tab" href={`/p/${slug}/screens`}>Écrans</Link>
         <Link className={trash ? "tab on" : "tab"} href={`/p/${slug}?trash=1`}>Corbeille</Link>
       </div>
       {write && !trash ? <ProjectToolbar slug={slug} folderId={current?.id ?? null} /> : null}

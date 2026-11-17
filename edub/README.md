@@ -40,6 +40,8 @@ cd edub/portal
 npm ci
 cp .env.example .env.local   # puis remplir (jamais commité ; le dépôt est public)
 npm test                     # tests unitaires (droits, gate, jetons, identité, historique git)
+npm run e2e:screens          # galerie d'écrans : API, droits, 404 images, 200 uploads (même setup que ci-dessous)
+npm run e2e:sandbox          # galerie : sandbox HTML, lightbox, comparaison (Playwright + Chrome système)
 npm run e2e                  # E2E droits + historique contre un `next dev` (voir ci-dessous)
 npm run typecheck
 EDUB_DESIGN_DEV_USER=patrick:design npm run dev   # impersonation, DEV UNIQUEMENT

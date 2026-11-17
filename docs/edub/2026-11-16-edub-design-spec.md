@@ -99,6 +99,19 @@ Règles (fonction pure `lib/rights.ts`, testée) :
 
 Les routes métier futures du portail vivent sous `/api/edub/*` (`/api/*` hors exceptions part à l'éditeur).
 
+## 5 bis. Galerie d'écrans (ED_1731)
+
+Par projet, onglet **Écrans** (`/p/<slug>/screens`). Mêmes rôles que le projet : viewer lit (et commente), editor/owner écrit, non-membre = 404 partout (images comprises).
+
+- **Modèle** (migration `0002_screens_gallery`) : `screen_section` (arbre à 1 niveau, `position`), `screen` (titre, section, `platform` ios|android|web|watch|desktop|email|autre, `type` capture|maquette-html|design, tags, description markdown, `status` proposé|validé|en prod|obsolète, `links` typés, `tickets` = `ED_xxxx` indexés, auteur user/agent), `screen_version` (chaque upload = une version, historique conservé), `screen_comment` (markdown, mentions, épingle x/y 0..1). Les enums sont du `text` validé par `lib/screens-model.ts` (ajouter une valeur = pas de migration).
+- **Disque** : `data/projects/<slug>/screens/<screenId>/v<n>.<ext>` + `v<n>.thumb.webp` (480 px, sharp). Le type est détecté sur le **contenu** (sharp), jamais sur le mime annoncé ; SVG refusé (script). Vignettes HTML : Chrome headless (`playwright-core`, `/usr/bin/google-chrome`, surcharge `EDUB_DESIGN_CHROME`), **JavaScript coupé et réseau bloqué**, 2 rendus max en parallèle, régénérées à la demande si absentes.
+- **Maquettes HTML = non fiables.** Servies par la route de fichier avec `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; connect-src 'none'; …` (sans `allow-same-origin` : origine opaque, ni cookie, ni accès au portail, même ouverte directement) et affichées dans `<iframe sandbox="allow-scripts">`. Testé : `npm run e2e:sandbox`.
+- **API** (préfixe réel `/api/edub/projects/:slug/…`, comme le reste du portail) :
+  `GET/POST screens` (filtres `q platform status tag ticket section(id|none) type sort page pageSize`), `GET/PATCH/DELETE screens/:id`, `POST screens/:id/versions`, `GET screens/:id/versions/:n|current/file|thumb`, `GET/POST screens/:id/comments`, `DELETE …/comments/:cid`, `GET/POST sections`, `PATCH/DELETE sections/:id` (`move: up|down`).
+  Écriture en **multipart** (`file` + champs) **ou JSON base64** (`filename`, `contentBase64`, `mime?`, `agent?`). Écran `design` : JSON `{type:"design", designFileId, frameId?}` (sans fichier ni version).
+- **UI** : grille paginée (60/page, vignettes lazy, `content-visibility`), filtres dans l'URL, lightbox (←/→, swipe, Esc, geste retour), upload glisser-déposer / coller / galerie mobile, détail (versions, commentaires épinglés, liens tickets → `https://dev.edub.fr/?todo=ED_xxxx`), partage = lien `/p/<slug>/screens/<id>` (membres seulement), comparaison côte à côte / curseur / différences (`mix-blend-mode: difference`).
+- **Pas fait ici** : import TamaFit (ticket suivant), outils MCP (ticket MCP), notification des @mentions (journal d'activité seulement), rendu d'un frame `.op` pour les écrans `design` (lien seulement).
+
 ## 6. MCP (cible, ticket suivant)
 
 - Jetons agents émis par le portail (table dédiée, haché, scopes `read`/`write`, projets autorisés), présentés en `Authorization: Bearer` sur `https://design.edub.fr/mcp` (déjà exempté d'Authelia dans nginx).
