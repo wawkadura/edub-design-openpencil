@@ -263,9 +263,19 @@ async function toUpload(e: Entry): Promise<{ filename: string; data: Buffer } | 
     // Paths assembled at runtime (`const A='../assets/'` … `A+'decors/x.png'`, or full literals in objects): embed every
     // resolvable candidate keyed by the string the script will build, and swap `src` on the fly (see SHIM).
     const prefixes = new Set([""]);
-    for (const m of r.html.matchAll(/['"]((?:\.\.?\/)+(?:[A-Za-z0-9_.-]+\/)*)['"]/g)) prefixes.add(m[1]!);
+    const up: string[] = [];
+    const rel: string[] = [];
+    // Directory literals: `'../assets/'` (climbing) or `'decors/variants/'` (relative, appended to another one: DV=A+'decors/variants/').
+    for (const m of r.html.matchAll(/['"`]((?:\.\.?\/)*(?:[A-Za-z0-9_.-]+\/)+|(?:\.\.\/)+)['"`]/g)) (m[1]!.startsWith(".") ? up : rel).push(m[1]!);
+    for (const d of rel) prefixes.add(d);
+    for (const u of up) {
+      prefixes.add(u);
+      for (const d of rel) prefixes.add(u + d);
+    }
+    // File names: quoted literals AND tails inside template strings (`${IMG}bench-press.png`).
     const suffixes = new Set<string>();
-    for (const m of r.html.matchAll(/['"`]([A-Za-z0-9_./-]+\.(?:png|webp|jpe?g|svg))['"`]/gi)) suffixes.add(m[1]!);
+    for (const m of r.html.matchAll(/(?<![A-Za-z0-9_./-])((?:\.\.?\/)*(?:[A-Za-z0-9_-][A-Za-z0-9_./-]*\/)?[A-Za-z0-9_.-]+\.(?:png|webp|jpe?g|svg))(?=['"`)\s,;}<>?#])/gi)) suffixes.add(m[1]!);
+    for (const m of r.html.matchAll(/\}([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:png|webp|jpe?g|svg))/gi)) suffixes.add(m[1]!);
     let budget = 3.5 * 1024 * 1024;
     for (const pre of prefixes) {
       for (const suf of suffixes) {
