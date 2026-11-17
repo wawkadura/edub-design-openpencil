@@ -291,6 +291,9 @@ async function main() {
   const todo = entries.filter((e) => screenKeys.has(e.rel));
   // Resources last so their section sorts after the features; folders alphabetical.
   todo.sort((a, b) => Number(isResource(a.rel)) - Number(isResource(b.rel)) || a.rel.localeCompare(b.rel));
+  // Sections first, one at a time (parallel workers would race and create duplicates).
+  for (const e of todo) await sectionIdFor(placeOf(e.rel));
+  for (const dir of [...sectionNotes.keys()].sort()) await sectionIdFor(sectionOfDir(dir));
   const queue = [...todo];
   await Promise.all(Array.from({ length: 4 }, async () => { for (let e = queue.shift(); e; e = queue.shift()) await importOne(e); }));
 
