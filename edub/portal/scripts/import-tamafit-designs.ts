@@ -92,6 +92,24 @@ const readCached = (abs: string): Buffer | null => {
 const inside = (root: string, abs: string) => abs === root || abs.startsWith(root + path.sep);
 let fallbacks = 0;
 let built = 0;
+const webpCache = new Map<string, Buffer>();
+const webpSmall = new Map<string, Buffer>();
+/** Lookup that does not count as a stale-path fallback in the report. */
+const mimeOfExt = (abs: string) => (/\.svg$/i.test(abs) ? "image/svg+xml" : /\.png$/i.test(abs) ? "image/png" : /\.webp$/i.test(abs) ? "image/webp" : "image/jpeg");
+const quiet = (base: string, ref: string) => {
+  const n = fallbacks;
+  const f = fetchRef(base, ref);
+  fallbacks = n;
+  return f;
+};
+/** Swaps `src` of images whose script-built path is in the embedded map (also for nodes added later). */
+const SHIM =
+  "(function(){var M=window.__EA,F=window.__EF;" +
+  "function f(e){if(!e.getAttribute)return;var v=e.getAttribute('src');if(v&&v.slice(0,5)!=='data:'){v=v.replace(/[?#].*$/,'');if(M[v]!==undefined)e.setAttribute('src',F[M[v]])}" +
+  "var st=e.getAttribute('style');if(st&&st.indexOf('url(')>-1){var n=st.replace(/url\\((['\"]?)([^'\")]+)\\1\\)/g,function(m,q,u){u=u.replace(/[?#].*$/,'');return M[u]!==undefined?\"url('\"+F[M[u]]+\"')\":m});if(n!==st)e.setAttribute('style',n)}}" +
+  "function all(n){f(n);if(n.querySelectorAll){var l=n.querySelectorAll('img,source,[style*=\"url(\"]');for(var i=0;i<l.length;i++)f(l[i])}}" +
+  "new MutationObserver(function(ms){ms.forEach(function(m){if(m.type==='attributes')f(m.target);else m.addedNodes.forEach(all)})}).observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['src','style']});" +
+  "document.addEventListener('DOMContentLoaded',function(){all(document)})})();";
 /**
  * Relative asset refs may resolve in the designs tree or in the app repo (never elsewhere). A ref that
  * climbs too high (stale `../../../../assets/…` of moved mockups) is retried from the repo root, then
@@ -213,26 +231,116 @@ async function toUpload(e: Entry): Promise<{ filename: string; data: Buffer } | 
     }
     // Paths BUILT by a script (`imgDepth + 'assets/…png`, shared.js placeholders): inline them as data URIs too.
     r.html = r.html.replace(/\b[A-Za-z_]\w*\s*\+\s*'(assets\/[^'"\\]+\.(?:png|jpe?g|webp))/g, (all, ref: string) => {
-      const f = fetchRef(base, `../../../../${ref}`);
+      const f = quiet(base, `../../../../${ref}`);
       if (!f) return all;
       built++;
       return `'data:${/\.png$/i.test(ref) ? "image/png" : /\.webp$/i.test(ref) ? "image/webp" : "image/jpeg"};base64,${f.data.toString("base64")}`;
     });
     // Template literals `../assets/dir/${name}.svg`: embed that folder's files in a map and read from it.
-    const assetMap: Record<string, string> = {};
+    const assetMap: Record<string, number> = {};
+    const efiles: string[] = [];
+    const efIndex = new Map<string, number>();
+    const addFile = (f: { abs: string; data: Buffer }): number => {
+      let i = efIndex.get(f.abs);
+      if (i === undefined) {
+        i = efiles.push(`data:${mimeOfExt(f.abs)};base64,${f.data.toString("base64")}`) - 1;
+        efIndex.set(f.abs, i);
+      }
+      return i;
+    };
     r.html = r.html.replace(/((?:\.\.\/)+[A-Za-z0-9_./-]+\/)\$\{([^}]+)\}(\.(?:svg|png|webp|jpg))/g, (all, dirRef: string, expr: string, ext: string) => {
       const dir = [path.resolve(base, dirRef), path.join(REPO_ROOT, dirRef.replace(/^(\.\.\/)+/, "")), path.join(SOURCE, dirRef.replace(/^(\.\.\/)+/, ""))].find((d) => (inside(SOURCE, d) || inside(REPO_ROOT, d)) && existsSync(d));
       if (!dir) return all;
       const names = readdirSync(dir).filter((n) => n.endsWith(ext));
       if (names.length === 0 || names.length > 80) return all;
       for (const n of names) {
-        const data = readCached(path.join(dir, n));
-        if (data) assetMap[`${dirRef}${n.slice(0, -ext.length)}${ext}`] = `data:${ext === ".svg" ? "image/svg+xml" : ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg"};base64,${data.toString("base64")}`;
+        const abs = path.join(dir, n);
+        const data = readCached(abs);
+        if (data) assetMap[`${dirRef}${n.slice(0, -ext.length)}${ext}`] = addFile({ abs, data });
       }
       built++;
-      return `\${__EA[${JSON.stringify(dirRef)} + (${expr}) + ${JSON.stringify(ext)}] || ""}`;
+      return `\${__EF[__EA[${JSON.stringify(dirRef)} + (${expr}) + ${JSON.stringify(ext)}]] || ""}`;
     });
-    if (Object.keys(assetMap).length) r.html = `<script>window.__EA=${JSON.stringify(assetMap)}</script>${r.html}`;
+    // Paths assembled at runtime (`const A='../assets/'` … `A+'decors/x.png'`, or full literals in objects): embed every
+    // resolvable candidate keyed by the string the script will build, and swap `src` on the fly (see SHIM).
+    const prefixes = new Set([""]);
+    const up: string[] = [];
+    const rel: string[] = [];
+    // Directory literals: `'../assets/'` (climbing) or `'decors/variants/'` (relative, appended to another one: DV=A+'decors/variants/').
+    for (const m of r.html.matchAll(/['"`]((?:\.\.?\/)*(?:[A-Za-z0-9_.-]+\/)+|(?:\.\.\/)+)['"`]/g)) (m[1]!.startsWith(".") ? up : rel).push(m[1]!);
+    // Directories right before a dynamic part: `illus/rank-${set}.png`, `${A}paywall-gen/items/${img}.png`, `…/before-after/${lieu}/${obj}.png`.
+    const dynDirs = new Set<string>();
+    for (const m of r.html.matchAll(/['"`(=}]((?:\.\.?\/)*(?:[A-Za-z0-9_.-]+\/)+)[A-Za-z0-9_.-]*(?:\$\{|['"]\s*\+)/g)) (m[1]!.startsWith(".") ? up : rel).push(m[1]!), dynDirs.add(m[1]!);
+    for (const m of r.html.matchAll(/\}((?:[A-Za-z0-9_.-]+\/)+)(?:[A-Za-z0-9_.-]*\$\{|[A-Za-z0-9_.-]+\.(?:png|webp|jpe?g|svg))/g)) rel.push(m[1]!), dynDirs.add(m[1]!);
+    for (const d of rel) prefixes.add(d);
+    for (const u of up) {
+      prefixes.add(u);
+      for (const d of rel) prefixes.add(u + d);
+    }
+    // File names: quoted literals AND tails inside template strings (`${IMG}bench-press.png`).
+    const suffixes = new Set<string>();
+    for (const m of r.html.matchAll(/(?<![A-Za-z0-9_./-])((?:\.\.?\/)*(?:[A-Za-z0-9_-][A-Za-z0-9_./-]*\/)?[A-Za-z0-9_.-]+\.(?:png|webp|jpe?g|svg))(?=['"`)\s,;}<>?#])/gi)) suffixes.add(m[1]!);
+    for (const m of r.html.matchAll(/\}([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.(?:png|webp|jpe?g|svg))/gi)) suffixes.add(m[1]!);
+    let budget = 3.5 * 1024 * 1024;
+    for (const pre of prefixes) {
+      for (const suf of suffixes) {
+        const key = pre + suf;
+        if (key in assetMap || budget <= 0) continue;
+        let f = quiet(base, key);
+        if (!f) continue;
+        if (!efIndex.has(f.abs) && /\.(png|jpe?g)$/i.test(f.abs) && f.data.length > 30_000) {
+          // Script-built (dynamic) images are many and repeated: keep them light.
+          const abs = f.abs;
+          let w = webpCache.get(abs);
+          if (!w) webpCache.set(abs, (w = await sharp(f.data).webp({ quality: 72 }).toBuffer()));
+          f = { abs: `${abs}.webp`, data: w };
+        }
+        if (!efIndex.has(f.abs)) budget -= f.data.length * 1.34;
+        assetMap[key] = addFile(f);
+        built++;
+      }
+    }
+    // File names composed at runtime (`'mascot-palm-'+g+'.webp'`, `${MUSC}${g.mus}.png`): embed the images of every directory
+    // that a literal prefix points to (bounded), keyed prefix + file name.
+    let dirBudget = 4 * 1024 * 1024;
+    const doneDirs = new Set<string>();
+    for (const pre of prefixes) {
+      if (!pre) continue;
+      const stripped = pre.replace(/^(\.\.?\/)+/, "");
+      const dir = [path.resolve(base, pre), path.join(REPO_ROOT, stripped), path.join(SOURCE, stripped)].find((d) => (inside(SOURCE, d) || inside(REPO_ROOT, d)) && existsSync(d) && statSync(d).isDirectory());
+      if (!dir || dir === SOURCE || dir === REPO_ROOT) continue;
+      const deep = dynDirs.has(pre) || [...dynDirs].some((d) => pre.endsWith(d));
+      const listing: string[] = [];
+      (function collect(d: string, relDir: string, depth: number) {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+          if (e.isFile() && /\.(png|webp|jpe?g|svg)$/i.test(e.name)) listing.push(relDir + e.name);
+          else if (e.isDirectory() && deep && depth < 2 && !e.name.startsWith(".")) collect(path.join(d, e.name), `${relDir}${e.name}/`, depth + 1);
+        }
+      })(dir, "", 0);
+      const names = listing.sort((x, y) => statSync(path.join(dir, x)).size - statSync(path.join(dir, y)).size);
+      if (names.length === 0 || names.length > 400) continue;
+      for (const n of names) {
+        const key = pre + n;
+        if (key in assetMap || dirBudget <= 0) continue;
+        const abs = path.join(dir, n);
+        let data = readCached(abs);
+        if (!data) continue;
+        let fabs = abs.split(path.sep).join("/");
+        if (/\.(png|jpe?g)$/i.test(n) && data.length > 10_000) {
+          let w = webpSmall.get(abs);
+          if (!w) webpSmall.set(abs, (w = await sharp(data).resize({ width: 480, withoutEnlargement: true }).webp({ quality: 60 }).toBuffer()));
+          data = w;
+          fabs = `${fabs}.webp`;
+        }
+        if (!efIndex.has(fabs)) dirBudget -= data.length * 1.34;
+        assetMap[key] = addFile({ abs: fabs, data });
+        built++;
+      }
+      doneDirs.add(dir);
+    }
+    if (dirBudget <= 0) report.anomalies.push(`${e.rel} : dossiers d'images construites par script, budget de 4 Mo atteint, les fichiers suivants restent non résolus`);
+    if (budget <= 0) report.anomalies.push(`${e.rel} : images construites par script, budget de 3,5 Mo atteint, les suivantes restent non résolues`);
+    if (Object.keys(assetMap).length) r.html = `<script>window.__EA=${JSON.stringify(assetMap)};window.__EF=${JSON.stringify(efiles)};${SHIM}</script>${r.html}`;
     report.inlined += r.report.inlined;
     for (const m of [...new Set(r.report.missing)]) report.anomalies.push(`${e.rel} : référence relative introuvable « ${m.slice(0, 80)} » (laissée telle quelle)`);
     return { filename: path.basename(e.rel), data: Buffer.from(r.html) };
@@ -331,7 +439,7 @@ function render(live: boolean): string {
     `- Statuts : ${n(report.byStatus)}`,
     `- Écriture : ${n(report.byOutcome)}`,
     `- Dates : git ${report.datesFrom.git}, mtime ${report.datesFrom.mtime}`,
-    `- Références inlinées dans les maquettes HTML (CSS, JS, images, polices) : ${report.inlined} (dont ${fallbacks - built} résolues par repli : chemin relatif périmé, retrouvé depuis la racine du dépôt) ; chemins construits par script (imgDepth + 'assets/…', …/NOM.png) inlinés : ${built}`,
+    `- Références inlinées dans les maquettes HTML (CSS, JS, images, polices) : ${report.inlined} (dont ${fallbacks} résolues par repli : chemin relatif périmé, retrouvé depuis la racine du dépôt) ; chemins construits par script (imgDepth + 'assets/…', …/NOM.png) inlinés : ${built}`,
     "",
     `## Associations HTML ↔ PNG (${report.paired.length})`,
     "Le PNG n'est pas importé à part : il sert de vignette à la maquette (tag `rendu-png`).",
