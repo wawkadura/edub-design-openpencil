@@ -36,8 +36,10 @@ die() { echo "ERREUR : $*" >&2; exit "${2:-3}"; }
 
 [[ "$(id -un)" != edub ]] || die "à lancer depuis un clone de dev, pas le clone live (user edub)"
 if [[ $RESUME == 1 ]]; then
-  git rev-parse -q --verify HEAD^2 >/dev/null || die "--resume : HEAD n'est pas un commit de merge"
-  BRANCH="$(git rev-parse --abbrev-ref HEAD)"; BASE_HEAD="$(git rev-parse HEAD^1)"; REF="$(git rev-parse HEAD^2)"
+  # The sync merge may sit below later commits (fixes, merge of main): find it on the first-parent line.
+  MC="$(git log --first-parent --merges -1 --format=%H --grep='^chore(sync): merge')"
+  [[ -n "$MC" ]] || die "--resume : aucun commit « chore(sync): merge » trouvé"
+  BRANCH="$(git rev-parse --abbrev-ref HEAD)"; BASE_HEAD="$(git rev-parse "$MC^1")"; REF="$(git rev-parse "$MC^2")"
   NEW=$(git rev-list --count "$BASE_HEAD..$REF"); HINT=""
   PATCHED=""
 else
