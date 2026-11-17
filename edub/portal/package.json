@@ -15,16 +15,24 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "e2e": "tsx scripts/e2e-rights.mts"
+    "seed:projects": "tsx scripts/seed-projects.ts",
+    "mcp:token": "tsx scripts/mcp-token.ts",
+    "e2e": "tsx scripts/e2e-rights.mts",
+    "e2e:screens": "tsx scripts/e2e-screens.mts",
+    "e2e:sandbox": "tsx scripts/e2e-sandbox.mts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.4",
     "next": "^16.3.7",
     "pg": "^8.23.1",
+    "playwright-core": "^1.65.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "tsx": "^4.23.15"
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

@@ -99,11 +99,38 @@ Règles (fonction pure `lib/rights.ts`, testée) :
 
 Les routes métier futures du portail vivent sous `/api/edub/*` (`/api/*` hors exceptions part à l'éditeur).
 
-## 6. MCP (cible, ticket suivant)
+## 5 bis. Galerie d'écrans (ED_1731)
 
-- Jetons agents émis par le portail (table dédiée, haché, scopes `read`/`write`, projets autorisés), présentés en `Authorization: Bearer` sur `https://design.edub.fr/mcp` (déjà exempté d'Authelia dans nginx).
-- Outils portail : lister projets/fichiers, créer un fichier, lire l'aperçu/écran. Outils de design : relais vers le MCP de l'hôte `POST 127.0.0.1:3100/mcp?tenant=f_…` avec un Bearer fichier minté (même `mintEditorToken`), profil complet ou `lean`.
-- Vérifié pendant ED_1728 : `tools/list` (159 outils) et `tools/call get_document_info` répondent sur un tenant fichier.
+Par projet, onglet **Écrans** (`/p/<slug>/screens`). Mêmes rôles que le projet : viewer lit (et commente), editor/owner écrit, non-membre = 404 partout (images comprises).
+
+- **Modèle** (migration `0002_screens_gallery`) : `screen_section` (arbre à 1 niveau, `position`), `screen` (titre, section, `platform` ios|android|web|watch|desktop|email|autre, `type` capture|maquette-html|design, tags, description markdown, `status` proposé|validé|en prod|obsolète, `links` typés, `tickets` = `ED_xxxx` indexés, auteur user/agent), `screen_version` (chaque upload = une version, historique conservé), `screen_comment` (markdown, mentions, épingle x/y 0..1). Les enums sont du `text` validé par `lib/screens-model.ts` (ajouter une valeur = pas de migration).
+- **Disque** : `data/projects/<slug>/screens/<screenId>/v<n>.<ext>` + `v<n>.thumb.webp` (480 px, sharp). Le type est détecté sur le **contenu** (sharp), jamais sur le mime annoncé ; SVG refusé (script). Vignettes HTML : Chrome headless (`playwright-core`, `/usr/bin/google-chrome`, surcharge `EDUB_DESIGN_CHROME`), **JavaScript coupé et réseau bloqué**, 2 rendus max en parallèle, régénérées à la demande si absentes.
+- **Maquettes HTML = non fiables.** Servies par la route de fichier avec `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; connect-src 'none'; …` (sans `allow-same-origin` : origine opaque, ni cookie, ni accès au portail, même ouverte directement) et affichées dans `<iframe sandbox="allow-scripts">`. Testé : `npm run e2e:sandbox`.
+- **API** (préfixe réel `/api/edub/projects/:slug/…`, comme le reste du portail) :
+  `GET/POST screens` (filtres `q platform status tag ticket section(id|none) type sort page pageSize`), `GET/PATCH/DELETE screens/:id`, `POST screens/:id/versions`, `GET screens/:id/versions/:n|current/file|thumb`, `GET/POST screens/:id/comments`, `DELETE …/comments/:cid`, `GET/POST sections`, `PATCH/DELETE sections/:id` (`move: up|down`).
+  Écriture en **multipart** (`file` + champs) **ou JSON base64** (`filename`, `contentBase64`, `mime?`, `agent?`). Écran `design` : JSON `{type:"design", designFileId, frameId?}` (sans fichier ni version).
+- **UI** : grille paginée (60/page, vignettes lazy, `content-visibility`), filtres dans l'URL, lightbox (←/→, swipe, Esc, geste retour), upload glisser-déposer / coller / galerie mobile, détail (versions, commentaires épinglés, liens tickets → `https://dev.edub.fr/?todo=ED_xxxx`), partage = lien `/p/<slug>/screens/<id>` (membres seulement), comparaison côte à côte / curseur / différences (`mix-blend-mode: difference`).
+- **Pas fait ici** : import TamaFit (ticket suivant), outils MCP (ticket MCP), notification des @mentions (journal d'activité seulement), rendu d'un frame `.op` pour les écrans `design` (lien seulement).
+
+## 5 ter. Import de `tamafit-app/docs/designs` (ED_1733)
+
+`bash edub/scripts/import-tamafit-designs.sh` (relançable, clé d'idempotence = chemin source stocké dans `screen.source_key`) :
+snapshot **en lecture seule** du dossier source (le user `edub` ne lit pas le dépôt TamaFit) + dates du dernier commit git de chaque fichier,
+import par `edub/portal/scripts/import-tamafit-designs.ts`, snapshot supprimé. Les designs TamaFit ne sont **jamais** dans le dépôt (données dans `data/`).
+
+- 1 dossier = 1 section, sous-dossier = sous-section (la galerie n'imbrique qu'un niveau : plus profond → tags) ; `archive*` → statut `obsolète` ; `assets` et `exercise-images` → section « Ressources ».
+- PNG/WebP/JPG → `capture` ; SVG → rastérisé en PNG (`capture`) ; HTML → `maquette-html` rendue **autonome** : CSS, JS, images, polices relatifs sont inlinés (`data:`), car l'iframe sandbox n'a pas d'origine et ne reçoit pas le cookie Authelia pour ses sous-ressources. Au-delà de 8 Mo, les rasters sont ré-encodés en WebP.
+- Un PNG « rendu » d'un HTML (`x.html` + `x.png` ou `x-overview.png`) n'est pas un écran à part : il sert de vignette à la maquette (tag `rendu-png`).
+- `.md` : `README.md` / notes d'un dossier → `screen_section.description` (affichée dans la galerie), `x.md` à côté de `x.html|png` → description de l'écran. Une relance ne remplace jamais une description déjà éditée.
+- Relance : mêmes octets → rien ; octets changés → nouvelle version (historique gardé). Droits jamais touchés (owner seul à la création).
+
+## 6. MCP agents — livré (ED_1732)
+
+- `https://design.edub.fr/mcp` : Streamable HTTP sans session (SDK `@modelcontextprotocol/sdk`, serveur bas niveau, schémas JSON), code dans `edub/portal/lib/mcp/`. Mode d'emploi et liste des outils : `edub/docs/mcp.md`.
+- Jetons `edd_…` (table `mcp_token`, sha-256 seul stocké, scopes `{project|*, role viewer|editor}`, jamais owner), administrés par Walid sur `/admin/tokens`. Un projet hors scope = « not found ». Journal des appels `mcp_call`, rate-limit par jeton.
+- Identité d'un agent : `agent:<label>` (journal d'activité, auteur des commits git). Les droits sont ceux du jeton, pas ceux d'un utilisateur Authelia.
+- Outils de design (`batch_design`, `design_*`, `batch_get`, `export_*`) : relais vers `POST 127.0.0.1:3100/mcp?tenant=f_…` avec un Bearer fichier minté (`mintEditorToken`), liste blanche, `filePath` supprimé ; après une écriture le portail enregistre le document vivant dans git au nom de l'agent.
+- Liens signés (`/mcp/dl`, HMAC, 10 min) pour images d'écran et exports.
 
 ## 7. Stockage
 

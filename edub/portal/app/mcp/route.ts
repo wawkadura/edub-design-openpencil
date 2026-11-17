@@ -1,16 +1,12 @@
+import { handleMcp } from "@/lib/mcp/server.ts";
+
 /**
- * Public MCP endpoint (nginx: no Authelia, Bearer checked here). Not served yet:
- * the agent MCP (per-file tools proxied to the editor's tenant MCP) is a later
- * ticket — see docs/edub/2026-11-16-edub-design-spec.md §MCP.
+ * Public MCP endpoint of Edub Design (nginx: no Authelia, the Bearer agent token is checked here).
+ * Tools, scopes and limits live in `lib/mcp/`; documentation in `edub/docs/mcp.md`.
  */
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
-function unauthorized(): Response {
-  return Response.json(
-    { jsonrpc: "2.0", error: { code: -32001, message: "unauthorized: Edub Design MCP token required" }, id: null },
-    { status: 401, headers: { "www-authenticate": 'Bearer realm="edub-design"' } },
-  );
-}
-
-export const GET = unauthorized;
-export const POST = unauthorized;
+export const POST = handleMcp;
+export const GET = handleMcp;
+export const DELETE = handleMcp;

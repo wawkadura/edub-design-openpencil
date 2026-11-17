@@ -15,6 +15,27 @@
       "when": 1794908840503,
       "tag": "0001_projects_rights",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794924966180,
+      "tag": "0002_screens_gallery",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794926032576,
+      "tag": "0003_mcp_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794940178107,
+      "tag": "0004_screens_import",
+      "breakpoints": true
     }
   ]
 }

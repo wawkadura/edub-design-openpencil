@@ -33,4 +33,12 @@ export const ACTION_LABEL: Record<string, string> = {
   "file.trashed": "a mis à la corbeille",
   "file.restored": "a restauré",
   "file.version-restored": "a restauré une version de",
+  "section.created": "a créé la section",
+  "section.updated": "a modifié la section",
+  "section.deleted": "a supprimé la section",
+  "screen.created": "a ajouté l'écran",
+  "screen.version": "a ajouté une version de l'écran",
+  "screen.updated": "a modifié l'écran",
+  "screen.deleted": "a supprimé l'écran",
+  "screen.commented": "a commenté l'écran",
 };
