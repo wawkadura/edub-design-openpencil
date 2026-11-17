@@ -10,6 +10,14 @@ import type { ProjectRole } from "./db/schema.ts";
 /** Editor routes no Edub user may reach (sharing and device login stay in the portal). */
 export const BLOCKED_PREFIXES = ["/api/share/", "/api/auth/", "/api/file/"] as const;
 
+/**
+ * Outbound-capable editor routes (the host calls a third party on the caller's behalf).
+ * ED_1730: image search (Openverse/Wikimedia) and hosted models (op-hub) are closed for everyone;
+ * the AI relay (own key typed in the browser) is for Walid (admin) only.
+ */
+export const CLOSED_AI_PREFIXES = ["/api/ai/image/search", "/api/ai/hosted/"] as const;
+export const ADMIN_ONLY_PREFIXES = ["/api/ai/"] as const;
+
 const READ_METHODS = new Set(["GET", "HEAD"]);
 
 /** The editor page itself: checked like a read so a file the caller cannot see answers 404. */
@@ -60,6 +68,8 @@ export function decide(input: {
   publicOrigin: string;
   /** Role of the caller on the file's project; null = no access. Admin = "owner". */
   role: ProjectRole | null;
+  /** Authelia `admin` group (Walid). Gates the built-in AI. */
+  admin?: boolean;
 }): GateDecision {
   const method = input.method.toUpperCase();
   const isPage = (PAGE_PATHS as readonly string[]).includes(input.path);
@@ -76,6 +86,9 @@ export function decide(input: {
   if (BLOCKED_PREFIXES.some((p) => input.path.startsWith(p))) {
     return { allow: false, status: 403, reason: "route-disabled-on-edub" };
   }
+  if (CLOSED_AI_PREFIXES.some((p) => input.path.startsWith(p))) {
+    return { allow: false, status: 403, reason: "route-disabled-on-edub" };
+  }
   if (!input.tenant || !TENANT_RE.test(input.tenant)) {
     return { allow: false, status: 403, reason: "missing-or-invalid-tenant" };
   }
@@ -87,6 +100,9 @@ export function decide(input: {
   }
   if (input.role === null) {
     return { allow: false, status: 403, reason: "no-access-to-file" };
+  }
+  if (ADMIN_ONLY_PREFIXES.some((p) => input.path.startsWith(p)) && !input.admin) {
+    return { allow: false, status: 403, reason: "ai-admin-only" };
   }
   if (input.role === "viewer" && !isRead) {
     return { allow: false, status: 403, reason: "read-only-access" };

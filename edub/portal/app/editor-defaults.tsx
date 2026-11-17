@@ -14,7 +14,7 @@ const DEFAULTS = {
   mcp_port: 3100,
   mcp_cli_enabled: Array(13).fill(false),
   images_advanced_open: false,
-  auto_update_enabled: true,
+  auto_update_enabled: false,
   experimental_features_enabled: false,
   image_gen_enabled: false,
   recent_files: [],

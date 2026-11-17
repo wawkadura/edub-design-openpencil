@@ -29,5 +29,5 @@ export const POST = (req: Request, { params }: { params: Promise<{ slug: string 
       const b = await bodyOf(req);
       file = await createFile(me, project, { name: b.name, folderId: b.folderId });
     }
-    return json({ ok: true, file: { id: file.id, name: file.name } }, 201);
+    return json({ ok: true, file: { id: file.id, name: file.name, tenantId: file.tenantId } }, 201);
   });

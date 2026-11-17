@@ -112,15 +112,40 @@ Les routes métier futures du portail vivent sous `/api/edub/*` (`/api/*` hors e
 - `data/` est gitignoré et sauvegardé par edub-backup (voir INFRA.md, seuil 30 Mo). Postgres `edub_design` sauvegardé par pg_dump global.
 - Démo : projet `demo` / fichier « Lumina landing » = `lumina-landing.op` de l'upstream, seedé par `npm run seed:demo` (idempotent).
 
-## 8. Ce qui est désactivé de l'upstream (par configuration, pas par patch)
+## 8. Ce qui est désactivé de l'upstream (par configuration, pas par patch) — ED_1730
 
-- Fermé par l'hôte en `--online` : `/api/file/*`, `/api/auth/*` (login device op-hub), persistance des réglages/identifiants serveur, import de site, variantes de design, relai de collaboration, collab LAN, modèles hébergés, agents CLI hôtes, alias `POST /`, shutdown générique.
-- Fermé par nginx/gate : `/api/share/*`, `/api/auth/*`, `/api/file/*`, `/api/v1/*`, le `/mcp` de l'hôte, tout appel sans `?tenant=f_…` autorisé.
-- IA du chat : utilisable seulement avec une clé personnelle saisie dans le navigateur (jamais stockée côté serveur).
+| Sortie / risque | État | Comment c'est coupé |
+|---|---|---|
+| Relai de collaboration public, hubs régionaux, collab LAN | coupé | refusé par l'hôte en `--online` (`online_policy.rs`) ; gate : tout `/api/*` exige un `?tenant=` autorisé |
+| Login cloud / device login (op-hub) | coupé | `/api/auth/*` refusé par l'hôte (online) **et** par le gate (`BLOCKED_PREFIXES`) ; `GET /api/auth/status` → 403 attendu |
+| Télémétrie | absente | aucune télémétrie dans l'hôte web ni le bundle (audit du code, ED_1730) |
+| Vérification de mises à jour | coupée | `auto_update_enabled=false` forcé dans les réglages locaux par `public/edub-shell.js` (et `app/editor-defaults.tsx`) ; CSP `connect-src 'self'` en filet |
+| Openverse / Wikimedia (recherche d'images, outil `enrich_images`) | coupé | `/api/ai/image/search` fermé pour tous par le gate (`CLOSED_AI_PREFIXES`) ; `enrich_images` n'est joignable que par le MCP de l'hôte (loopback, jamais exposé) |
+| Modèles hébergés op-hub | coupé | `/api/ai/hosted/*` fermé par le gate (et refusé par l'hôte en online) |
+| Iconify, polices / images / avatars tiers, fetch d'URL par le navigateur | coupé | CSP de la page `/editor` : `connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:` (nginx, `location = /editor`). Effet : le sélecteur d'icônes en ligne et les images distantes ne se chargent plus ; le catalogue local (`/pkg/assets/`) reste actif |
+| IA intégrée (relais vers le fournisseur, clé saisie dans le navigateur) | **Walid (admin) seulement** | le gate refuse `/api/ai/*` (403 `ai-admin-only`) à tout autre rôle, y compris owner de projet ; la clé reste dans le navigateur, jamais stockée côté serveur (persistance des identifiants refusée par l'hôte en online). Réglage contraire : retirer `ADMIN_ONLY_PREFIXES` dans `lib/gate.ts` |
+| Origines | `OPENPENCIL_WEB_ALLOWED_ORIGINS=https://design.edub.fr` | `ecosystem.config.cjs` |
+| Fichiers du serveur, import de site, variantes, agents CLI hôtes, alias `POST /`, shutdown | coupés | hôte en `--online` (+ nginx/gate : `/api/share/*`, `/api/file/*`, `/api/v1/*`, `/mcp` de l'hôte) |
+
+Vérification « aucune requête sortante » : hôte → `ss -tnp | grep op-host-web-server` ne montre que du loopback ; navigateur → Playwright : 0 requête hors origine pendant une session d'édition (ouverture, dessin, enregistrement, menus), la CSP bloque le reste.
+
+## 8 bis. Overlay de l'éditeur (ED_1730, aucun patch Rust)
+
+nginx injecte dans la page `/editor` (`sub_filter`) : `lang="fr"`, titre « Edub Design », favicon, manifeste PWA, thème, et `<script src="/edub-shell.js">` (`edub/portal/public/edub-shell.js`, fichier public sans secret). Le script :
+
+- **Réglages** : français et pas de mise à jour auto, posés avant que le wasm ne monte (un choix de langue ultérieur n'est jamais écrasé).
+- **Contexte** : `GET /api/edub/editor-context?tenant=` (session + droit, 404 sinon) → rôle, projet, dossiers, fichier.
+- **Barre** : « ← Bibliothèque », fil d'Ariane projet / dossier / fichier, état « Enregistré ✓ / Enregistrement… / Hors ligne / Conflit ». Les écritures de l'hôte partent en XHR (`live_sync.rs`) : le script enveloppe `XMLHttpRequest` et `fetch`.
+- **Enregistrement** : autosave = celui de l'hôte (un document par tenant, SSE) + commit git ~20 s après la dernière écriture (gate). « Enregistrer » / Ctrl+S (qui visait `/api/file/save`, fermé) crée une **version git immédiate** (`POST /api/edub/files/<id>/versions`). « Enregistrer sous » (téléchargement `.op`) ouvre un dialogue **bibliothèque du portail** (projets où l'on est éditeur, dossier, nom) ; « Ouvrir un fichier » ouvre la bibliothèque (projets visibles seulement) puis navigue vers `/editor?tenant=`.
+- **Conflit** : la sync live de l'hôte est versionnée (deux onglets sur un fichier convergent par SSE) ; si une écriture est refusée en 409/412 : dialogue « Recharger » / « Enregistrer une copie » (copie dans le même dossier).
+- **Lecture seule (viewer)** : badge + garde d'entrée (clavier d'édition, glisser, double-clic, collage, dépôt bloqués ; molette / zoom / panoramique / sélection restent). Le **serveur refuse de toute façon** : le gate répond 403 `read-only-access` à toute écriture. Limite : l'éditeur Rust n'a pas de vrai mode lecture seule, les outils restent visibles mais inertes (candidat patch §9).
+- **Geste retour** : une entrée d'historique est empilée ; sur `popstate` le script envoie `Escape` à l'éditeur (ferme panneaux / modales) et remet l'entrée ; seul « ← Bibliothèque » quitte l'éditeur.
+- **PWA** : `/manifest.webmanifest` (route du portail), icônes `public/*.png` (générées par `scripts/make-icons.mts` depuis `public/icon.svg`), `public/sw.js` (installabilité, ne cache rien), tous publics dans nginx.
+- **Harnais de QA** sans Authelia : `edub/portal/scripts/editor-harness.mts` (nginx + gate + hub simulés, vrai binaire ; lit `sub_filter` et CSP dans le fichier nginx).
 
 ## 9. Patches du cœur Rust
 
-**Aucun** à ce jour. Règle : tout patch futur doit être minimal, isolé (idéalement derrière un flag ou dans un fichier `*_edub.rs`), listé ici avec sa raison, et accompagné d'un test. Candidats connus : registre de vignettes par tenant (images des écrans), flush périodique des tenants.
+**Aucun** à ce jour. Règle : tout patch futur doit être minimal, isolé (idéalement derrière un flag ou dans un fichier `*_edub.rs`), listé ici avec sa raison, et accompagné d'un test. Candidats connus : registre de vignettes par tenant (images des écrans), flush périodique des tenants, vrai mode lecture seule de l'éditeur (outils masqués) pour le rôle viewer.
 
 ## 10. Stratégie de merge upstream
 

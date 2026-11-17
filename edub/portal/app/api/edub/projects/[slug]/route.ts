@@ -19,7 +19,7 @@ export const GET = (req: Request, { params }: Ctx) =>
       project: { slug: project.slug, name: project.name, emoji: project.emoji, color: project.color, description: project.description, archived: project.archived },
       role,
       folders: folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
-      files: files.map((f) => ({ id: f.id, name: f.name, folderId: f.folderId, screenCount: f.screenCount, updatedAt: f.updatedAt, trashedAt: f.trashedAt })),
+      files: files.map((f) => ({ id: f.id, tenantId: f.tenantId, name: f.name, folderId: f.folderId, screenCount: f.screenCount, updatedAt: f.updatedAt, trashedAt: f.trashedAt })),
       // Who has access is only shown to people who manage it.
       members: canManage(role) ? members.map((m) => ({ kind: m.principalKind, principal: m.principal, role: m.role })) : undefined,
     });

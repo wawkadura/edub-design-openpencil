@@ -3,7 +3,7 @@ import { accessForTenant, upsertUser } from "@/lib/access.ts";
 import { mintEditorToken } from "@/lib/editor-token.ts";
 import { env } from "@/lib/env.ts";
 import { decide, parseOriginalUri } from "@/lib/gate.ts";
-import { canUseDesign, parseDevUser, type Identity } from "@/lib/identity.ts";
+import { canUseDesign, isAdmin, parseDevUser, type Identity } from "@/lib/identity.ts";
 import { isProduction } from "@/lib/env.ts";
 import { logActivity, scheduleSnapshot } from "@/lib/projects.ts";
 
@@ -47,7 +47,7 @@ export async function GET(req: Request): Promise<Response> {
   if (!canUseDesign(identity)) return deny(403, "not-in-design-group");
 
   const access = tenant ? await accessForTenant(identity, tenant) : null;
-  const decision = decide({ method, path, tenant, origin, publicOrigin: env.publicOrigin, role: access?.role ?? null });
+  const decision = decide({ method, path, tenant, origin, publicOrigin: env.publicOrigin, role: access?.role ?? null, admin: isAdmin(identity) });
   if (!decision.allow) return deny(decision.status, decision.reason);
 
   if (access) {

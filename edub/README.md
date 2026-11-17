@@ -70,6 +70,14 @@ npm run e2e          # A owner, B viewer, C 404, groupe tamagofit-team, admin, 3
 `https://design.edub.fr/editor?tenant=f_<32 hex>` (lien depuis l'accueil). Le `tenant` est la colonne
 `design_file.tenant_id` ; chaque appel API de l'éditeur est revérifié par le gate du portail.
 
+## Overlay de l'éditeur (ED_1730)
+
+`portal/public/edub-shell.js` est injecté dans `/editor` par nginx (`sub_filter`, spec §8 bis) : après un
+changement de la conf nginx, la recopier (cf. plus haut). QA sans compte Authelia :
+`cd edub/portal && npx tsx scripts/editor-harness.mts` puis
+`http://127.0.0.1:3938/editor?tenant=f_0123456789abcdef0123456789abcdef&as=editor|viewer|admin`
+(binaire lu dans `/home/edub/apps/edub-design/dist`).
+
 ## Secrets (jamais dans le dépôt)
 
 - `edub/portal/.env.local` (600, edub) : `EDUB_DESIGN_DATABASE_URL`, `EDUB_DESIGN_TOKEN_SECRET`, chemins.

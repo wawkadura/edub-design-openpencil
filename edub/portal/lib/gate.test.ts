@@ -63,3 +63,19 @@ test("the editor page opens for any member, reads only", () => {
   assert.equal(decide({ ...base, path: "/editor", role: "owner", method: "POST", origin: ORIGIN }).allow, false);
   assert.equal(publicStatus(decide({ ...base, path: "/editor", tenant: null })), 404);
 });
+
+test("built-in AI relay is admin-only; image search and hosted models are closed for all", () => {
+  const ai = { ...base, method: "POST", origin: ORIGIN, path: "/api/ai/stream" };
+  assert.deepEqual(decide({ ...ai, role: "owner", admin: true }), { allow: true });
+  const guest = decide({ ...ai, role: "editor" });
+  assert.equal(guest.allow, false);
+  assert.equal(!guest.allow && guest.reason, "ai-admin-only");
+  assert.equal(publicStatus(guest), 403);
+  for (const path of ["/api/ai/image/search", "/api/ai/hosted/models"]) {
+    const d = decide({ ...ai, path, role: "owner", admin: true });
+    assert.equal(d.allow, false, path);
+    assert.equal(!d.allow && d.reason, "route-disabled-on-edub");
+  }
+  // reading the model list is part of the AI surface too
+  assert.equal(decide({ ...base, path: "/api/ai/models", role: "viewer" }).allow, false);
+});
